@@ -25,6 +25,7 @@ Auth:
 - POST /auth/otp/request
 - POST /auth/otp/verify
 - POST /auth/google/login
+  - body: `{ id_token, phone }` (id_token from Google Identity Services)
   - OTP via email uses SMTP_* env vars; WhatsApp uses FONNTE_*; fallback dev mode uses OTP_ECHO=true
   - OTP request body accepts `email` or `phone` + optional `channel` (email|whatsapp|sms)
   - SMS delivery requires provider integration (not configured by default)

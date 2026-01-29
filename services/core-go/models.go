@@ -75,10 +75,8 @@ type OtpVerifyRequest struct {
 }
 
 type GoogleLoginRequest struct {
-  Email    string `json:"email"`
-  Name     string `json:"name"`
+  IDToken  string `json:"id_token"`
   Phone    string `json:"phone"`
-  GoogleID string `json:"google_id"`
 }
 
 type ProfileUpdateRequest struct {

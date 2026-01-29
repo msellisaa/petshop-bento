@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 
 const CORE_API = import.meta.env.VITE_CORE_API || 'http://localhost:8081'
 const BOOKING_API = import.meta.env.VITE_BOOKING_API || 'http://localhost:8082'
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
 
 const rupiah = (n) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(n || 0)
 
@@ -21,7 +22,7 @@ export default function App() {
   const [registerMethod, setRegisterMethod] = useState('email')
   const [avatarStatus, setAvatarStatus] = useState('')
   const [otpState, setOtpState] = useState({ code: '', token: '', message: '', sent: false, verified: false })
-  const [googleForm, setGoogleForm] = useState({ email: '', name: '', phone: '', google_id: '' })
+  const [googlePhone, setGooglePhone] = useState('')
   const [googleStatus, setGoogleStatus] = useState('')
   const [googleConsent, setGoogleConsent] = useState(false)
   const [profileForm, setProfileForm] = useState({ name: '', username: '', avatar_url: '' })
@@ -196,22 +197,16 @@ export default function App() {
     }
   }
 
-  const submitGoogle = async () => {
+  const handleGoogleCredential = async (credential) => {
     setGoogleStatus('')
     if (!googleConsent) {
       setGoogleStatus('Setujui izin akses Google terlebih dulu.')
       return
     }
-    const payload = {
-      email: googleForm.email,
-      name: googleForm.name,
-      phone: googleForm.phone,
-      google_id: googleForm.google_id || googleForm.email
-    }
     const resp = await fetch(`${CORE_API}/auth/google/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({ id_token: credential, phone: googlePhone })
     })
     const data = await resp.json()
     if (data.token) {
@@ -223,6 +218,25 @@ export default function App() {
       setGoogleStatus(data.error || 'Login Google gagal.')
     }
   }
+
+  useEffect(() => {
+    if (!GOOGLE_CLIENT_ID) {
+      setGoogleStatus('Google Client ID belum diisi.')
+      return
+    }
+    if (!googleConsent) return
+    const renderButton = () => {
+      const el = document.getElementById('google-signin')
+      if (!el || !window.google?.accounts?.id) return
+      el.innerHTML = ''
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: (resp) => handleGoogleCredential(resp.credential)
+      })
+      window.google.accounts.id.renderButton(el, { theme: 'outline', size: 'large' })
+    }
+    renderButton()
+  }, [googleConsent])
 
   const uploadAvatar = async (file) => {
     if (!file) return
@@ -811,11 +825,8 @@ export default function App() {
             </div>
             <div className="auth-block">
               <h3>Google Sign-in</h3>
-              <form className="form-grid" onSubmit={(e) => { e.preventDefault(); submitGoogle() }}>
-                <input placeholder="Email Google" value={googleForm.email} onChange={(e) => setGoogleForm({ ...googleForm, email: e.target.value })} />
-                <input placeholder="Nama" value={googleForm.name} onChange={(e) => setGoogleForm({ ...googleForm, name: e.target.value })} />
-                <input placeholder="Telepon" value={googleForm.phone} onChange={(e) => setGoogleForm({ ...googleForm, phone: e.target.value })} />
-                <input placeholder="Google ID (opsional)" value={googleForm.google_id} onChange={(e) => setGoogleForm({ ...googleForm, google_id: e.target.value })} />
+              <form className="form-grid" onSubmit={(e) => e.preventDefault()}>
+                <input placeholder="Telepon (opsional)" value={googlePhone} onChange={(e) => setGooglePhone(e.target.value)} />
                 <label className="checkbox">
                   <input
                     type="checkbox"
@@ -824,7 +835,7 @@ export default function App() {
                   />
                   <span>Saya setuju izin akses Google untuk login/daftar.</span>
                 </label>
-                <button className="btn" type="submit" disabled={!googleConsent}>Login/Daftar dengan Google</button>
+                <div id="google-signin" />
                 {googleStatus && <small>{googleStatus}</small>}
               </form>
               <small>Daftar Google tidak butuh OTP.</small>
