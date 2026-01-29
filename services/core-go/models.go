@@ -45,10 +45,13 @@ type OrderRequest struct {
 
 type AuthRegisterRequest struct {
   Name     string `json:"name"`
+  Username string `json:"username"`
   Email    string `json:"email"`
   Phone    string `json:"phone"`
   Password string `json:"password"`
   OtpToken string `json:"otp_token"`
+  AvatarURL string `json:"avatar_url"`
+  OtpChannel string `json:"otp_channel"`
 }
 
 type AuthLoginRequest struct {
@@ -58,11 +61,15 @@ type AuthLoginRequest struct {
 
 type OtpRequest struct {
   Email   string `json:"email"`
+  Phone   string `json:"phone"`
+  Channel string `json:"channel"`
   Purpose string `json:"purpose"`
 }
 
 type OtpVerifyRequest struct {
   Email   string `json:"email"`
+  Phone   string `json:"phone"`
+  Channel string `json:"channel"`
   Purpose string `json:"purpose"`
   Code    string `json:"code"`
 }
@@ -72,6 +79,12 @@ type GoogleLoginRequest struct {
   Name     string `json:"name"`
   Phone    string `json:"phone"`
   GoogleID string `json:"google_id"`
+}
+
+type ProfileUpdateRequest struct {
+  Name      string `json:"name"`
+  Username  string `json:"username"`
+  AvatarURL string `json:"avatar_url"`
 }
 
 type AdminBootstrapRequest struct {
