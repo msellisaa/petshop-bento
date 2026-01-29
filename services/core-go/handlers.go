@@ -94,47 +94,89 @@ func productHandler(db *sql.DB) http.HandlerFunc {
 
 func cartItemHandler(db *sql.DB) http.HandlerFunc {
   return func(w http.ResponseWriter, r *http.Request) {
-    if r.Method != http.MethodPost {
+    switch r.Method {
+    case http.MethodPost:
+      var req CartItemRequest
+      if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        writeJSON(w, http.StatusBadRequest, errMsg("invalid json"))
+        return
+      }
+      if req.ProductID == "" || req.Qty <= 0 {
+        writeJSON(w, http.StatusBadRequest, errMsg("product_id and qty required"))
+        return
+      }
+
+      cartID := req.CartID
+      if cartID == "" {
+        if err := db.QueryRow(`INSERT INTO carts DEFAULT VALUES RETURNING id`).Scan(&cartID); err != nil {
+          writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
+          return
+        }
+      }
+
+      var existingID string
+      err := db.QueryRow(`SELECT id FROM cart_items WHERE cart_id = $1 AND product_id = $2`, cartID, req.ProductID).Scan(&existingID)
+      if err == nil {
+        _, err = db.Exec(`UPDATE cart_items SET qty = qty + $1 WHERE id = $2`, req.Qty, existingID)
+        if err != nil {
+          writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
+          return
+        }
+      } else if err == sql.ErrNoRows {
+        _, err = db.Exec(`INSERT INTO cart_items (cart_id, product_id, qty) VALUES ($1, $2, $3)`, cartID, req.ProductID, req.Qty)
+        if err != nil {
+          writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
+          return
+        }
+      } else {
+        writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
+        return
+      }
+      writeJSON(w, http.StatusOK, map[string]string{"cart_id": cartID})
+    case http.MethodPut:
+      var req CartItemRequest
+      if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        writeJSON(w, http.StatusBadRequest, errMsg("invalid json"))
+        return
+      }
+      if req.CartID == "" || req.ProductID == "" {
+        writeJSON(w, http.StatusBadRequest, errMsg("cart_id and product_id required"))
+        return
+      }
+      if req.Qty <= 0 {
+        _, err := db.Exec(`DELETE FROM cart_items WHERE cart_id = $1 AND product_id = $2`, req.CartID, req.ProductID)
+        if err != nil {
+          writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
+          return
+        }
+        writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+        return
+      }
+      _, err := db.Exec(`UPDATE cart_items SET qty = $1 WHERE cart_id = $2 AND product_id = $3`, req.Qty, req.CartID, req.ProductID)
+      if err != nil {
+        writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
+        return
+      }
+      writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+    case http.MethodDelete:
+      var req CartItemRequest
+      if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        writeJSON(w, http.StatusBadRequest, errMsg("invalid json"))
+        return
+      }
+      if req.CartID == "" || req.ProductID == "" {
+        writeJSON(w, http.StatusBadRequest, errMsg("cart_id and product_id required"))
+        return
+      }
+      _, err := db.Exec(`DELETE FROM cart_items WHERE cart_id = $1 AND product_id = $2`, req.CartID, req.ProductID)
+      if err != nil {
+        writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
+        return
+      }
+      writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+    default:
       writeJSON(w, http.StatusMethodNotAllowed, errMsg("method not allowed"))
-      return
     }
-    var req CartItemRequest
-    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-      writeJSON(w, http.StatusBadRequest, errMsg("invalid json"))
-      return
-    }
-    if req.ProductID == "" || req.Qty <= 0 {
-      writeJSON(w, http.StatusBadRequest, errMsg("product_id and qty required"))
-      return
-    }
-
-    cartID := req.CartID
-    if cartID == "" {
-      if err := db.QueryRow(`INSERT INTO carts DEFAULT VALUES RETURNING id`).Scan(&cartID); err != nil {
-        writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
-        return
-      }
-    }
-
-    var existingID string
-    err := db.QueryRow(`SELECT id FROM cart_items WHERE cart_id = $1 AND product_id = $2`, cartID, req.ProductID).Scan(&existingID)
-    if err == nil {
-      _, err = db.Exec(`UPDATE cart_items SET qty = qty + $1 WHERE id = $2`, req.Qty, existingID)
-      if err != nil {
-        writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
-        return
-      }
-    } else if err == sql.ErrNoRows {
-      _, err = db.Exec(`INSERT INTO cart_items (cart_id, product_id, qty) VALUES ($1, $2, $3)`, cartID, req.ProductID, req.Qty)
-      if err != nil {
-        writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
-        return
-      }
-    } else {
-      writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
-      return
-    }
-    writeJSON(w, http.StatusOK, map[string]string{"cart_id": cartID})
   }
 }
 

@@ -273,6 +273,13 @@ a { color: inherit; text-decoration: none; }
   gap: 18px;
 }
 
+.filter-row {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
 .product-card {
   background: #fff;
   border-radius: 18px;
@@ -281,6 +288,7 @@ a { color: inherit; text-decoration: none; }
   box-shadow: var(--shadow);
   display: grid;
   gap: 10px;
+  cursor: pointer;
 }
 
 .product-img {
@@ -434,6 +442,71 @@ a { color: inherit; text-decoration: none; }
   border-bottom: 1px dashed var(--line);
 }
 
+.cart-actions {
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+}
+
+.qty-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.qty-btn {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 8px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.4);
+  display: grid;
+  place-items: center;
+  z-index: 60;
+}
+
+.modal {
+  background: #fff;
+  border-radius: 18px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  width: min(520px, 90vw);
+  display: grid;
+  gap: 12px;
+}
+
+.modal-img {
+  width: 100%;
+  height: 220px;
+  object-fit: cover;
+  border-radius: 12px;
+}
+
+.modal-close {
+  justify-self: end;
+  border: 0;
+  background: var(--brand);
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.pay-row {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
 .row {
   display: flex;
   gap: 10px;
@@ -503,4 +576,5 @@ small {
   .delivery-grid, .checkout-grid, .member-grid, .location-grid, .doctor-grid { grid-template-columns: 1fr; }
   .product-grid, .service-grid { grid-template-columns: 1fr; }
   .section-head { flex-direction: column; align-items: flex-start; }
+  .filter-row { grid-template-columns: 1fr; }
 }

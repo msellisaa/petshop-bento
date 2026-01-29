@@ -589,6 +589,50 @@ func profileUpdateHandler(db *sql.DB) http.HandlerFunc {
   }
 }
 
+func passwordChangeHandler(db *sql.DB) http.HandlerFunc {
+  return func(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodPut {
+      writeJSON(w, http.StatusMethodNotAllowed, errMsg("method not allowed"))
+      return
+    }
+    userID, err := getUserIDFromToken(db, r)
+    if err != nil {
+      writeJSON(w, http.StatusUnauthorized, errMsg("unauthorized"))
+      return
+    }
+    var req PasswordChangeRequest
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+      writeJSON(w, http.StatusBadRequest, errMsg("invalid json"))
+      return
+    }
+    if strings.TrimSpace(req.CurrentPassword) == "" || strings.TrimSpace(req.NewPassword) == "" {
+      writeJSON(w, http.StatusBadRequest, errMsg("current_password and new_password required"))
+      return
+    }
+    var hash string
+    err = db.QueryRow(`SELECT password_hash FROM users WHERE id = $1`, userID).Scan(&hash)
+    if err != nil {
+      writeJSON(w, http.StatusInternalServerError, errMsg("not found"))
+      return
+    }
+    if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(req.CurrentPassword)); err != nil {
+      writeJSON(w, http.StatusUnauthorized, errMsg("invalid current password"))
+      return
+    }
+    newHash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+    if err != nil {
+      writeJSON(w, http.StatusInternalServerError, errMsg("hash failed"))
+      return
+    }
+    _, err = db.Exec(`UPDATE users SET password_hash = $1 WHERE id = $2`, string(newHash), userID)
+    if err != nil {
+      writeJSON(w, http.StatusInternalServerError, errMsg("update failed"))
+      return
+    }
+    writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+  }
+}
+
 func meOrdersHandler(db *sql.DB) http.HandlerFunc {
   return func(w http.ResponseWriter, r *http.Request) {
     if r.Method != http.MethodGet {

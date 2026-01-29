@@ -12,6 +12,8 @@ Auth:
 - GET /products
 - GET /products/{id}
 - POST /cart/items
+- PUT /cart/items
+- DELETE /cart/items
 - GET /cart
 - POST /orders
   - body supports `voucher_code` and `wallet_use` (cashback amount)
@@ -39,6 +41,7 @@ Auth:
 - GET /me
 - PUT /me/profile
   - Username can be updated within 30 days after account creation
+- PUT /me/password
 - GET /me/vouchers
 - GET /me/orders
 - GET /vouchers
@@ -82,7 +85,9 @@ Admin auth:
 - PUT /schedules/{id}
 - DELETE /schedules/{id}
 - POST /appointments
+- GET /appointments?phone=...
 - POST /services/booking
+- GET /services/booking?phone=...
 - POST /payments/midtrans/snap
 - GET /payments/midtrans/status/{orderId}
 - POST /payments/midtrans/webhook

@@ -25,6 +25,11 @@ type CartItemRequest struct {
   Qty       int    `json:"qty"`
 }
 
+type PasswordChangeRequest struct {
+  CurrentPassword string `json:"current_password"`
+  NewPassword     string `json:"new_password"`
+}
+
 type CartItem struct {
   ID          string `json:"id"`
   Qty         int    `json:"qty"`
