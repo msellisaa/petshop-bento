@@ -140,9 +140,34 @@ See `docs/api.md` for full endpoints.
 ## Contribution
 
 We welcome contributions. Contributors:
-- Michelle Isaura Aishaa (Owner) - https://github.com/msellisaa
-- Ali Ahmad Nawawi - https://github.com/aliahmadnawawi
-- Ziziel - https://github.com/nazilalailatulafifah
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="https://github.com/msellisaa">
+        <img src="https://avatars.githubusercontent.com/msellisaa?v=4" width="80" height="80" alt="Michelle Isaura Aishaa" />
+      </a>
+      <br />
+      <strong>Michelle Isaura Aishaa</strong>
+      <br />
+      Owner
+    </td>
+    <td align="center">
+      <a href="https://github.com/aliahmadnawawi">
+        <img src="https://avatars.githubusercontent.com/aliahmadnawawi?v=4" width="80" height="80" alt="Ali Ahmad Nawawi" />
+      </a>
+      <br />
+      <strong>Ali Ahmad Nawawi</strong>
+    </td>
+    <td align="center">
+      <a href="https://github.com/nazilalailatulafifah">
+        <img src="https://avatars.githubusercontent.com/nazilalailatulafifah?v=4" width="80" height="80" alt="Ziziel" />
+      </a>
+      <br />
+      <strong>Ziziel</strong>
+    </td>
+  </tr>
+</table>
 
 Want to contribute? Please open an issue or submit a PR with clear description and screenshots if UI changes.
 
