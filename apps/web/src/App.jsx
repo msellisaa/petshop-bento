@@ -34,6 +34,10 @@ export default function App() {
   const [orderInfo, setOrderInfo] = useState(null)
   const [snapUrl, setSnapUrl] = useState('')
   const [paymentStatus, setPaymentStatus] = useState(null)
+  const [appointmentForm, setAppointmentForm] = useState({ customer_name: '', phone: '', pet_name: '', service_type: 'Konsultasi', schedule_id: '' })
+  const [appointmentStatus, setAppointmentStatus] = useState('')
+  const [serviceForm, setServiceForm] = useState({ customer_name: '', phone: '', service_type: 'Grooming', notes: '', date: '' })
+  const [serviceStatus, setServiceStatus] = useState('')
 
   useEffect(() => {
     fetch(`${CORE_API}/products`).then(r => r.json()).then(setProducts).catch(() => setProducts([]))
@@ -353,6 +357,48 @@ export default function App() {
     }
   }
 
+  const submitAppointment = async (e) => {
+    e.preventDefault()
+    setAppointmentStatus('')
+    if (!appointmentForm.schedule_id) {
+      setAppointmentStatus('Pilih jadwal dokter dulu.')
+      return
+    }
+    const resp = await fetch(`${BOOKING_API}/appointments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(appointmentForm)
+    })
+    const data = await resp.json()
+    if (data.appointment_id) {
+      setAppointmentStatus('Booking konsultasi berhasil.')
+      setAppointmentForm({ customer_name: '', phone: '', pet_name: '', service_type: 'Konsultasi', schedule_id: '' })
+      return
+    }
+    setAppointmentStatus(data.error || 'Booking gagal.')
+  }
+
+  const submitServiceBooking = async (e) => {
+    e.preventDefault()
+    setServiceStatus('')
+    if (!serviceForm.date) {
+      setServiceStatus('Tanggal wajib diisi.')
+      return
+    }
+    const resp = await fetch(`${BOOKING_API}/services/booking`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(serviceForm)
+    })
+    const data = await resp.json()
+    if (data.booking_id) {
+      setServiceStatus('Booking layanan berhasil.')
+      setServiceForm({ customer_name: '', phone: '', service_type: 'Grooming', notes: '', date: '' })
+      return
+    }
+    setServiceStatus(data.error || 'Booking gagal.')
+  }
+
   const logout = () => {
     if (token) {
       fetch(`${CORE_API}/auth/logout`, { method: 'POST', headers: { 'X-Auth-Token': token } }).catch(() => {})
@@ -369,12 +415,13 @@ export default function App() {
         <nav className="topnav">
           <a href="#produk">Produk</a>
           <a href="#layanan">Layanan</a>
+          <a href="#booking">Booking</a>
           <a href="#delivery">Delivery</a>
           <a href="#member">Member</a>
           <a href="#dokter">Dokter</a>
         </nav>
         <div className="top-actions">
-          <button className="pill">Chat WhatsApp</button>
+          <a className="pill" href="https://wa.me/6289643852920" target="_blank" rel="noreferrer">Chat WhatsApp</a>
           <button className="pill ghost" onClick={() => setCartOpen(true)}>Keranjang ({cartItems.length})</button>
         </div>
       </header>
@@ -417,8 +464,8 @@ export default function App() {
             Desain pengalaman belanja yang terasa hangat dan percaya diri.
           </p>
           <div className="cta-row">
-            <button className="btn primary">Belanja Sekarang</button>
-            <button className="btn outline">Booking Layanan</button>
+            <a className="btn primary" href="#produk">Belanja Sekarang</a>
+            <a className="btn outline" href="#booking">Booking Layanan</a>
           </div>
           <div className="meta-row">
             <div>
@@ -611,6 +658,47 @@ export default function App() {
               <p>{s.desc}</p>
             </div>
           ))}
+        </div>
+      </section>
+
+      <section id="booking" className="section">
+        <div className="section-head">
+          <div>
+            <h2>Booking Layanan</h2>
+            <p>Isi data singkat untuk konsultasi dokter atau layanan grooming.</p>
+          </div>
+          <div className="badge">Tanpa antre</div>
+        </div>
+        <div className="checkout-grid">
+          <div className="checkout-card">
+            <h3>Appointment Dokter</h3>
+            <form className="form-grid" onSubmit={submitAppointment}>
+              <input placeholder="Nama" value={appointmentForm.customer_name} onChange={(e) => setAppointmentForm({ ...appointmentForm, customer_name: e.target.value })} />
+              <input placeholder="Telepon" value={appointmentForm.phone} onChange={(e) => setAppointmentForm({ ...appointmentForm, phone: e.target.value })} />
+              <input placeholder="Nama Pet" value={appointmentForm.pet_name} onChange={(e) => setAppointmentForm({ ...appointmentForm, pet_name: e.target.value })} />
+              <input placeholder="Jenis Layanan" value={appointmentForm.service_type} onChange={(e) => setAppointmentForm({ ...appointmentForm, service_type: e.target.value })} />
+              <select value={appointmentForm.schedule_id} onChange={(e) => setAppointmentForm({ ...appointmentForm, schedule_id: e.target.value })}>
+                <option value="">Pilih Jadwal Dokter</option>
+                {(schedules.length ? schedules : demoSchedules).map(s => (
+                  <option key={s.id || s.doctor_name} value={s.id}>{s.doctor_name} - {s.day_of_week} {s.start_time}</option>
+                ))}
+              </select>
+              <button className="btn primary" type="submit">Booking Dokter</button>
+              {appointmentStatus && <small>{appointmentStatus}</small>}
+            </form>
+          </div>
+          <div className="checkout-card">
+            <h3>Grooming / Penitipan</h3>
+            <form className="form-grid" onSubmit={submitServiceBooking}>
+              <input placeholder="Nama" value={serviceForm.customer_name} onChange={(e) => setServiceForm({ ...serviceForm, customer_name: e.target.value })} />
+              <input placeholder="Telepon" value={serviceForm.phone} onChange={(e) => setServiceForm({ ...serviceForm, phone: e.target.value })} />
+              <input placeholder="Jenis Layanan" value={serviceForm.service_type} onChange={(e) => setServiceForm({ ...serviceForm, service_type: e.target.value })} />
+              <input type="date" value={serviceForm.date} onChange={(e) => setServiceForm({ ...serviceForm, date: e.target.value })} />
+              <input placeholder="Catatan (opsional)" value={serviceForm.notes} onChange={(e) => setServiceForm({ ...serviceForm, notes: e.target.value })} />
+              <button className="btn primary" type="submit">Booking Layanan</button>
+              {serviceStatus && <small>{serviceStatus}</small>}
+            </form>
+          </div>
         </div>
       </section>
 

@@ -18,12 +18,17 @@ export default function App() {
   const [staff, setStaff] = useState([])
   const [zones, setZones] = useState([])
   const [deliverySettings, setDeliverySettings] = useState({ base_lat: -6.2216339332113595, base_lng: 106.34573045889455, per_km_rate: 3000, min_fee: 8000 })
-  const [productForm, setProductForm] = useState({ name: '', price: 0, stock: 0, category: '' })
+  const [productForm, setProductForm] = useState({ name: '', description: '', price: 0, stock: 0, category: '' })
+  const [productEditId, setProductEditId] = useState('')
   const [productFile, setProductFile] = useState(null)
   const [scheduleForm, setScheduleForm] = useState({ doctor_name: '', day_of_week: 'Senin', start_time: '09:00', end_time: '16:00', location: 'Petshop Bento - Cikande' })
+  const [scheduleEditId, setScheduleEditId] = useState('')
   const [voucherForm, setVoucherForm] = useState({ code: '', title: '', discount_type: 'flat', discount_value: 0, min_spend: 0, max_uses: 0, expires_at: '', active: true })
+  const [voucherEditCode, setVoucherEditCode] = useState('')
   const [staffForm, setStaffForm] = useState({ name: '', email: '', phone: '', password: '', role: 'staff' })
+  const [staffEditId, setStaffEditId] = useState('')
   const [zoneForm, setZoneForm] = useState({ name: '', flat_fee: 0, active: true })
+  const [zoneEditId, setZoneEditId] = useState('')
 
   const adminHeaders = adminToken ? { 'X-Auth-Token': adminToken } : {}
   const bookingAdminHeaders = BOOKING_ADMIN_SECRET ? { 'X-Admin-Secret': BOOKING_ADMIN_SECRET } : {}
@@ -47,60 +52,80 @@ export default function App() {
 
   const submitProduct = async (e) => {
     e.preventDefault()
-    const resp = await fetch(`${CORE_API}/products`, {
-      method: 'POST',
+    const targetId = productEditId
+    const resp = await fetch(targetId ? `${CORE_API}/admin/products/${targetId}` : `${CORE_API}/products`, {
+      method: targetId ? 'PUT' : 'POST',
       headers: { 'Content-Type': 'application/json', ...adminHeaders },
       body: JSON.stringify(productForm)
     })
-    const data = await resp.json()
-    if (data.product_id && productFile) {
+    const data = await resp.json().catch(() => ({}))
+    const productId = targetId || data.product_id
+    if (productId && productFile) {
       const formData = new FormData()
       formData.append('image', productFile)
-      await fetch(`${CORE_API}/admin/products/${data.product_id}/image`, {
+      await fetch(`${CORE_API}/admin/products/${productId}/image`, {
         method: 'POST',
         headers: { ...adminHeaders },
         body: formData
       })
     }
-    setProductForm({ name: '', price: 0, stock: 0, category: '' })
+    setProductForm({ name: '', description: '', price: 0, stock: 0, category: '' })
+    setProductEditId('')
     setProductFile(null)
     load()
   }
 
   const submitSchedule = (e) => {
     e.preventDefault()
-    fetch(`${BOOKING_API}/schedules`, {
-      method: 'POST',
+    fetch(scheduleEditId ? `${BOOKING_API}/schedules/${scheduleEditId}` : `${BOOKING_API}/schedules`, {
+      method: scheduleEditId ? 'PUT' : 'POST',
       headers: { 'Content-Type': 'application/json', ...bookingAdminHeaders },
       body: JSON.stringify(scheduleForm)
-    }).then(() => { load() })
+    }).then(() => {
+      setScheduleForm({ doctor_name: '', day_of_week: 'Senin', start_time: '09:00', end_time: '16:00', location: 'Petshop Bento - Cikande' })
+      setScheduleEditId('')
+      load()
+    })
   }
 
   const submitVoucher = (e) => {
     e.preventDefault()
-    fetch(`${CORE_API}/admin/vouchers`, {
-      method: 'POST',
+    const targetCode = voucherEditCode || voucherForm.code
+    fetch(voucherEditCode ? `${CORE_API}/admin/vouchers/${targetCode}` : `${CORE_API}/admin/vouchers`, {
+      method: voucherEditCode ? 'PUT' : 'POST',
       headers: { 'Content-Type': 'application/json', ...adminHeaders },
       body: JSON.stringify(voucherForm)
-    }).then(() => { setVoucherForm({ code: '', title: '', discount_type: 'flat', discount_value: 0, min_spend: 0, max_uses: 0, expires_at: '', active: true }); load() })
+    }).then(() => {
+      setVoucherForm({ code: '', title: '', discount_type: 'flat', discount_value: 0, min_spend: 0, max_uses: 0, expires_at: '', active: true })
+      setVoucherEditCode('')
+      load()
+    })
   }
 
   const submitStaff = (e) => {
     e.preventDefault()
-    fetch(`${CORE_API}/admin/staff`, {
-      method: 'POST',
+    fetch(staffEditId ? `${CORE_API}/admin/staff/${staffEditId}` : `${CORE_API}/admin/staff`, {
+      method: staffEditId ? 'PUT' : 'POST',
       headers: { 'Content-Type': 'application/json', ...adminHeaders },
       body: JSON.stringify(staffForm)
-    }).then(() => { setStaffForm({ name: '', email: '', phone: '', password: '', role: 'staff' }); load() })
+    }).then(() => {
+      setStaffForm({ name: '', email: '', phone: '', password: '', role: 'staff' })
+      setStaffEditId('')
+      load()
+    })
   }
 
   const submitZone = (e) => {
     e.preventDefault()
-    fetch(`${CORE_API}/admin/delivery/zones`, {
-      method: 'POST',
+    fetch(zoneEditId ? `${CORE_API}/admin/delivery/zones/${zoneEditId}` : `${CORE_API}/admin/delivery/zones`, {
+      method: zoneEditId ? 'PUT' : 'POST',
       headers: { 'Content-Type': 'application/json', ...adminHeaders },
       body: JSON.stringify(zoneForm)
-    }).then(() => { setZoneForm({ name: '', flat_fee: 0, active: true }); load() })
+    }).then(() => {
+      setZoneForm({ name: '', flat_fee: 0, active: true })
+      setZoneEditId('')
+      load()
+    })
   }
 
   const saveDeliverySettings = (e) => {
@@ -114,6 +139,78 @@ export default function App() {
         per_km_rate: Number(deliverySettings.per_km_rate),
         min_fee: Number(deliverySettings.min_fee)
       })
+    }).then(() => load())
+  }
+
+  const editProduct = (p) => {
+    setProductForm({ name: p.name || '', description: p.description || '', price: p.price || 0, stock: p.stock || 0, category: p.category || '' })
+    setProductEditId(p.id)
+  }
+
+  const deleteProduct = (id) => {
+    fetch(`${CORE_API}/admin/products/${id}`, { method: 'DELETE', headers: { ...adminHeaders } }).then(() => load())
+  }
+
+  const editSchedule = (s) => {
+    setScheduleForm({ doctor_name: s.doctor_name || '', day_of_week: s.day_of_week || 'Senin', start_time: s.start_time || '09:00', end_time: s.end_time || '16:00', location: s.location || '' })
+    setScheduleEditId(s.id)
+  }
+
+  const deleteSchedule = (id) => {
+    fetch(`${BOOKING_API}/schedules/${id}`, { method: 'DELETE', headers: { ...bookingAdminHeaders } }).then(() => load())
+  }
+
+  const editVoucher = (v) => {
+    setVoucherForm({
+      code: v.code || '',
+      title: v.title || '',
+      discount_type: v.discount_type || 'flat',
+      discount_value: v.discount_value || 0,
+      min_spend: v.min_spend || 0,
+      max_uses: v.max_uses || 0,
+      expires_at: v.expires_at || '',
+      active: v.active ?? true
+    })
+    setVoucherEditCode(v.code)
+  }
+
+  const deleteVoucher = (code) => {
+    fetch(`${CORE_API}/admin/vouchers/${code}`, { method: 'DELETE', headers: { ...adminHeaders } }).then(() => load())
+  }
+
+  const editStaff = (s) => {
+    setStaffForm({ name: s.name || '', email: s.email || '', phone: s.phone || '', password: '', role: s.role || 'staff' })
+    setStaffEditId(s.id)
+  }
+
+  const deleteStaff = (id) => {
+    fetch(`${CORE_API}/admin/staff/${id}`, { method: 'DELETE', headers: { ...adminHeaders } }).then(() => load())
+  }
+
+  const editZone = (z) => {
+    setZoneForm({ name: z.name || '', flat_fee: z.flat_fee || 0, active: z.active ?? true })
+    setZoneEditId(z.id)
+  }
+
+  const deleteZone = (id) => {
+    fetch(`${CORE_API}/admin/delivery/zones/${id}`, { method: 'DELETE', headers: { ...adminHeaders } }).then(() => load())
+  }
+
+  const updateAppointmentStatus = (id, status) => {
+    if (!status) return
+    fetch(`${BOOKING_API}/admin/appointments/${id}/status`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...bookingAdminHeaders },
+      body: JSON.stringify({ status })
+    }).then(() => load())
+  }
+
+  const updateServiceBookingStatus = (id, status) => {
+    if (!status) return
+    fetch(`${BOOKING_API}/admin/service-bookings/${id}/status`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...bookingAdminHeaders },
+      body: JSON.stringify({ status })
     }).then(() => load())
   }
 
@@ -185,21 +282,27 @@ export default function App() {
           {tab === 'produk' && (
             <div>
               <div className="card">
-                <h3>Tambah Produk</h3>
+                <h3>{productEditId ? 'Edit Produk' : 'Tambah Produk'}</h3>
                 <form className="form-grid" onSubmit={submitProduct}>
                   <input placeholder="Nama" value={productForm.name} onChange={(e) => setProductForm({ ...productForm, name: e.target.value })} />
+                  <input placeholder="Deskripsi" value={productForm.description} onChange={(e) => setProductForm({ ...productForm, description: e.target.value })} />
                   <input placeholder="Harga" type="number" value={productForm.price} onChange={(e) => setProductForm({ ...productForm, price: Number(e.target.value) })} />
                   <input placeholder="Stok" type="number" value={productForm.stock} onChange={(e) => setProductForm({ ...productForm, stock: Number(e.target.value) })} />
                   <input placeholder="Kategori" value={productForm.category} onChange={(e) => setProductForm({ ...productForm, category: e.target.value })} />
                   <input type="file" accept="image/*" onChange={(e) => setProductFile(e.target.files?.[0] || null)} />
-                  <button className="btn" type="submit">Simpan</button>
+                  <button className="btn" type="submit">{productEditId ? 'Update' : 'Simpan'}</button>
+                  {productEditId && (
+                    <button className="btn" type="button" onClick={() => { setProductForm({ name: '', description: '', price: 0, stock: 0, category: '' }); setProductEditId(''); setProductFile(null) }}>
+                      Batal
+                    </button>
+                  )}
                 </form>
               </div>
               <div className="card">
                 <h3>Daftar Produk</h3>
                 <table className="table">
                   <thead>
-                    <tr><th>Nama</th><th>Kategori</th><th>Harga</th><th>Stok</th></tr>
+                    <tr><th>Nama</th><th>Kategori</th><th>Harga</th><th>Stok</th><th>Aksi</th></tr>
                   </thead>
                   <tbody>
                     {products.map(p => (
@@ -208,6 +311,10 @@ export default function App() {
                         <td>{p.category || '-'}</td>
                         <td>{p.price}</td>
                         <td>{p.stock}</td>
+                        <td>
+                          <button className="btn" type="button" onClick={() => editProduct(p)}>Edit</button>
+                          <button className="btn" type="button" onClick={() => deleteProduct(p.id)}>Hapus</button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -218,7 +325,7 @@ export default function App() {
           {tab === 'jadwal' && (
             <div>
               <div className="card">
-                <h3>Tambah Jadwal Dokter</h3>
+                <h3>{scheduleEditId ? 'Edit Jadwal Dokter' : 'Tambah Jadwal Dokter'}</h3>
                 <form className="form-grid" onSubmit={submitSchedule}>
                   <input placeholder="Nama Dokter" value={scheduleForm.doctor_name} onChange={(e) => setScheduleForm({ ...scheduleForm, doctor_name: e.target.value })} />
                   <select value={scheduleForm.day_of_week} onChange={(e) => setScheduleForm({ ...scheduleForm, day_of_week: e.target.value })}>
@@ -227,14 +334,19 @@ export default function App() {
                   <input type="time" value={scheduleForm.start_time} onChange={(e) => setScheduleForm({ ...scheduleForm, start_time: e.target.value })} />
                   <input type="time" value={scheduleForm.end_time} onChange={(e) => setScheduleForm({ ...scheduleForm, end_time: e.target.value })} />
                   <input placeholder="Lokasi" value={scheduleForm.location} onChange={(e) => setScheduleForm({ ...scheduleForm, location: e.target.value })} />
-                  <button className="btn" type="submit">Simpan</button>
+                  <button className="btn" type="submit">{scheduleEditId ? 'Update' : 'Simpan'}</button>
+                  {scheduleEditId && (
+                    <button className="btn" type="button" onClick={() => { setScheduleForm({ doctor_name: '', day_of_week: 'Senin', start_time: '09:00', end_time: '16:00', location: 'Petshop Bento - Cikande' }); setScheduleEditId('') }}>
+                      Batal
+                    </button>
+                  )}
                 </form>
               </div>
               <div className="card">
                 <h3>Jadwal Tersedia</h3>
                 <table className="table">
                   <thead>
-                    <tr><th>Dokter</th><th>Hari</th><th>Jam</th><th>Lokasi</th></tr>
+                    <tr><th>Dokter</th><th>Hari</th><th>Jam</th><th>Lokasi</th><th>Aksi</th></tr>
                   </thead>
                   <tbody>
                     {schedules.map(s => (
@@ -243,6 +355,10 @@ export default function App() {
                         <td>{s.day_of_week}</td>
                         <td>{s.start_time} - {s.end_time}</td>
                         <td>{s.location}</td>
+                        <td>
+                          <button className="btn" type="button" onClick={() => editSchedule(s)}>Edit</button>
+                          <button className="btn" type="button" onClick={() => deleteSchedule(s.id)}>Hapus</button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -256,7 +372,7 @@ export default function App() {
                 <h3>Appointment Dokter</h3>
                 <table className="table">
                   <thead>
-                    <tr><th>Nama</th><th>Telepon</th><th>Pet</th><th>Layanan</th><th>Status</th></tr>
+                    <tr><th>Nama</th><th>Telepon</th><th>Pet</th><th>Layanan</th><th>Status</th><th>Update</th></tr>
                   </thead>
                   <tbody>
                     {appointments.map(a => (
@@ -266,6 +382,14 @@ export default function App() {
                         <td>{a.pet_name}</td>
                         <td>{a.service_type}</td>
                         <td>{a.status}</td>
+                        <td>
+                          <select onChange={(e) => updateAppointmentStatus(a.id, e.target.value)} defaultValue="">
+                            <option value="" disabled>Pilih</option>
+                            <option value="BOOKED">BOOKED</option>
+                            <option value="DONE">DONE</option>
+                            <option value="CANCELED">CANCELED</option>
+                          </select>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -275,7 +399,7 @@ export default function App() {
                 <h3>Grooming dan Penitipan</h3>
                 <table className="table">
                   <thead>
-                    <tr><th>Nama</th><th>Telepon</th><th>Layanan</th><th>Tanggal</th><th>Status</th></tr>
+                    <tr><th>Nama</th><th>Telepon</th><th>Layanan</th><th>Tanggal</th><th>Status</th><th>Update</th></tr>
                   </thead>
                   <tbody>
                     {serviceBookings.map(b => (
@@ -285,6 +409,14 @@ export default function App() {
                         <td>{b.service_type}</td>
                         <td>{b.date}</td>
                         <td>{b.status}</td>
+                        <td>
+                          <select onChange={(e) => updateServiceBookingStatus(b.id, e.target.value)} defaultValue="">
+                            <option value="" disabled>Pilih</option>
+                            <option value="BOOKED">BOOKED</option>
+                            <option value="DONE">DONE</option>
+                            <option value="CANCELED">CANCELED</option>
+                          </select>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -316,7 +448,7 @@ export default function App() {
           {tab === 'staff' && (
             <div>
               <div className="card">
-                <h3>Tambah Staff/Admin</h3>
+                <h3>{staffEditId ? 'Edit Staff/Admin' : 'Tambah Staff/Admin'}</h3>
                 <form className="form-grid" onSubmit={submitStaff}>
                   <input placeholder="Nama" value={staffForm.name} onChange={(e) => setStaffForm({ ...staffForm, name: e.target.value })} />
                   <input placeholder="Email" value={staffForm.email} onChange={(e) => setStaffForm({ ...staffForm, email: e.target.value })} />
@@ -326,14 +458,19 @@ export default function App() {
                     <option value="staff">Staff</option>
                     <option value="admin">Admin</option>
                   </select>
-                  <button className="btn" type="submit">Simpan</button>
+                  <button className="btn" type="submit">{staffEditId ? 'Update' : 'Simpan'}</button>
+                  {staffEditId && (
+                    <button className="btn" type="button" onClick={() => { setStaffForm({ name: '', email: '', phone: '', password: '', role: 'staff' }); setStaffEditId('') }}>
+                      Batal
+                    </button>
+                  )}
                 </form>
               </div>
               <div className="card">
                 <h3>Daftar Admin/Staff</h3>
                 <table className="table">
                   <thead>
-                    <tr><th>Nama</th><th>Email</th><th>Role</th><th>Telepon</th></tr>
+                    <tr><th>Nama</th><th>Email</th><th>Role</th><th>Telepon</th><th>Aksi</th></tr>
                   </thead>
                   <tbody>
                     {staff.map(s => (
@@ -342,6 +479,10 @@ export default function App() {
                         <td>{s.email}</td>
                         <td>{s.role}</td>
                         <td>{s.phone}</td>
+                        <td>
+                          <button className="btn" type="button" onClick={() => editStaff(s)}>Edit</button>
+                          <button className="btn" type="button" onClick={() => deleteStaff(s.id)}>Hapus</button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -362,7 +503,7 @@ export default function App() {
                 </form>
               </div>
               <div className="card">
-                <h3>Tambah Zone (Flat Fee)</h3>
+                <h3>{zoneEditId ? 'Edit Zone (Flat Fee)' : 'Tambah Zone (Flat Fee)'}</h3>
                 <form className="form-grid" onSubmit={submitZone}>
                   <input placeholder="Nama Zone" value={zoneForm.name} onChange={(e) => setZoneForm({ ...zoneForm, name: e.target.value })} />
                   <input placeholder="Flat Fee" type="number" value={zoneForm.flat_fee} onChange={(e) => setZoneForm({ ...zoneForm, flat_fee: Number(e.target.value) })} />
@@ -370,14 +511,19 @@ export default function App() {
                     <option value="true">Active</option>
                     <option value="false">Inactive</option>
                   </select>
-                  <button className="btn" type="submit">Simpan</button>
+                  <button className="btn" type="submit">{zoneEditId ? 'Update' : 'Simpan'}</button>
+                  {zoneEditId && (
+                    <button className="btn" type="button" onClick={() => { setZoneForm({ name: '', flat_fee: 0, active: true }); setZoneEditId('') }}>
+                      Batal
+                    </button>
+                  )}
                 </form>
               </div>
               <div className="card">
                 <h3>Daftar Zone</h3>
                 <table className="table">
                   <thead>
-                    <tr><th>Zone</th><th>Flat Fee</th><th>Active</th></tr>
+                    <tr><th>Zone</th><th>Flat Fee</th><th>Active</th><th>Aksi</th></tr>
                   </thead>
                   <tbody>
                     {zones.map(z => (
@@ -385,6 +531,10 @@ export default function App() {
                         <td>{z.name}</td>
                         <td>{z.flat_fee}</td>
                         <td>{z.active ? 'Yes' : 'No'}</td>
+                        <td>
+                          <button className="btn" type="button" onClick={() => editZone(z)}>Edit</button>
+                          <button className="btn" type="button" onClick={() => deleteZone(z.id)}>Hapus</button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -395,9 +545,9 @@ export default function App() {
           {tab === 'voucher' && (
             <div>
               <div className="card">
-                <h3>Buat Voucher</h3>
+                <h3>{voucherEditCode ? 'Edit Voucher' : 'Buat Voucher'}</h3>
                 <form className="form-grid" onSubmit={submitVoucher}>
-                  <input placeholder="Kode" value={voucherForm.code} onChange={(e) => setVoucherForm({ ...voucherForm, code: e.target.value })} />
+                  <input placeholder="Kode" value={voucherForm.code} disabled={!!voucherEditCode} onChange={(e) => setVoucherForm({ ...voucherForm, code: e.target.value })} />
                   <input placeholder="Judul" value={voucherForm.title} onChange={(e) => setVoucherForm({ ...voucherForm, title: e.target.value })} />
                   <select value={voucherForm.discount_type} onChange={(e) => setVoucherForm({ ...voucherForm, discount_type: e.target.value })}>
                     <option value="flat">Flat</option>
@@ -407,14 +557,23 @@ export default function App() {
                   <input placeholder="Min belanja" type="number" value={voucherForm.min_spend} onChange={(e) => setVoucherForm({ ...voucherForm, min_spend: Number(e.target.value) })} />
                   <input placeholder="Max use (0 = unlimited)" type="number" value={voucherForm.max_uses} onChange={(e) => setVoucherForm({ ...voucherForm, max_uses: Number(e.target.value) })} />
                   <input placeholder="Expire date (YYYY-MM-DD)" value={voucherForm.expires_at} onChange={(e) => setVoucherForm({ ...voucherForm, expires_at: e.target.value })} />
-                  <button className="btn" type="submit">Simpan</button>
+                  <select value={voucherForm.active ? 'true' : 'false'} onChange={(e) => setVoucherForm({ ...voucherForm, active: e.target.value === 'true' })}>
+                    <option value="true">Active</option>
+                    <option value="false">Inactive</option>
+                  </select>
+                  <button className="btn" type="submit">{voucherEditCode ? 'Update' : 'Simpan'}</button>
+                  {voucherEditCode && (
+                    <button className="btn" type="button" onClick={() => { setVoucherForm({ code: '', title: '', discount_type: 'flat', discount_value: 0, min_spend: 0, max_uses: 0, expires_at: '', active: true }); setVoucherEditCode('') }}>
+                      Batal
+                    </button>
+                  )}
                 </form>
               </div>
               <div className="card">
                 <h3>Voucher Aktif</h3>
                 <table className="table">
                   <thead>
-                    <tr><th>Kode</th><th>Judul</th><th>Jenis</th><th>Nilai</th><th>Min</th><th>Uses</th></tr>
+                    <tr><th>Kode</th><th>Judul</th><th>Jenis</th><th>Nilai</th><th>Min</th><th>Uses</th><th>Active</th><th>Aksi</th></tr>
                   </thead>
                   <tbody>
                     {vouchers.map(v => (
@@ -425,6 +584,11 @@ export default function App() {
                         <td>{v.discount_value}</td>
                         <td>{v.min_spend}</td>
                         <td>{v.uses}</td>
+                        <td>{v.active ? 'Yes' : 'No'}</td>
+                        <td>
+                          <button className="btn" type="button" onClick={() => editVoucher(v)}>Edit</button>
+                          <button className="btn" type="button" onClick={() => deleteVoucher(v.code)}>Hapus</button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

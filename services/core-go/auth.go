@@ -706,7 +706,36 @@ func adminVouchersHandler(db *sql.DB) http.HandlerFunc {
         writeJSON(w, http.StatusUnauthorized, errMsg("unauthorized"))
         return
       }
-      vouchersHandler(db)(w, r)
+      rows, err := db.Query(`SELECT code, title, discount_type, discount_value, min_spend, max_uses, uses, expires_at, active FROM vouchers ORDER BY code`)
+      if err != nil {
+        writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
+        return
+      }
+      defer rows.Close()
+
+      out := []map[string]any{}
+      for rows.Next() {
+        var code, title, dtype string
+        var minSpend, maxUses, uses, dval int
+        var expiresAt sql.NullString
+        var active bool
+        if err := rows.Scan(&code, &title, &dtype, &dval, &minSpend, &maxUses, &uses, &expiresAt, &active); err != nil {
+          writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
+          return
+        }
+        out = append(out, map[string]any{
+          "code": code,
+          "title": title,
+          "discount_type": dtype,
+          "discount_value": dval,
+          "min_spend": minSpend,
+          "max_uses": maxUses,
+          "uses": uses,
+          "expires_at": expiresAt.String,
+          "active": active,
+        })
+      }
+      writeJSON(w, http.StatusOK, out)
     case http.MethodPost:
       if _, err := requireRoles(db, r, "owner", "admin"); err != nil {
         writeJSON(w, http.StatusUnauthorized, errMsg("unauthorized"))
@@ -725,6 +754,49 @@ func adminVouchersHandler(db *sql.DB) http.HandlerFunc {
         strings.ToUpper(req.Code), req.Title, req.DiscountType, req.DiscountValue, req.MinSpend, req.MaxUses, nullIfEmpty(req.ExpiresAt), req.Active)
       if err != nil {
         writeJSON(w, http.StatusBadRequest, errMsg("create voucher failed"))
+        return
+      }
+      writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+    default:
+      writeJSON(w, http.StatusMethodNotAllowed, errMsg("method not allowed"))
+    }
+  }
+}
+
+func adminVoucherItemHandler(db *sql.DB) http.HandlerFunc {
+  return func(w http.ResponseWriter, r *http.Request) {
+    if _, err := requireRoles(db, r, "owner", "admin"); err != nil {
+      writeJSON(w, http.StatusUnauthorized, errMsg("unauthorized"))
+      return
+    }
+    code := strings.TrimPrefix(r.URL.Path, "/admin/vouchers/")
+    code = strings.TrimSpace(code)
+    if code == "" {
+      writeJSON(w, http.StatusBadRequest, errMsg("missing code"))
+      return
+    }
+    switch r.Method {
+    case http.MethodPut:
+      var req VoucherCreateRequest
+      if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        writeJSON(w, http.StatusBadRequest, errMsg("invalid json"))
+        return
+      }
+      if req.Title == "" || req.DiscountType == "" || req.DiscountValue <= 0 {
+        writeJSON(w, http.StatusBadRequest, errMsg("title, discount_type, discount_value required"))
+        return
+      }
+      _, err := db.Exec(`UPDATE vouchers SET title = $1, discount_type = $2, discount_value = $3, min_spend = $4, max_uses = $5, expires_at = $6, active = $7 WHERE code = $8`,
+        req.Title, req.DiscountType, req.DiscountValue, req.MinSpend, req.MaxUses, nullIfEmpty(req.ExpiresAt), req.Active, strings.ToUpper(code))
+      if err != nil {
+        writeJSON(w, http.StatusBadRequest, errMsg("update voucher failed"))
+        return
+      }
+      writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+    case http.MethodDelete:
+      _, err := db.Exec(`DELETE FROM vouchers WHERE code = $1`, strings.ToUpper(code))
+      if err != nil {
+        writeJSON(w, http.StatusBadRequest, errMsg("delete voucher failed"))
         return
       }
       writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -887,6 +959,170 @@ func adminStaffHandler(db *sql.DB) http.HandlerFunc {
         return
       }
       writeJSON(w, http.StatusOK, map[string]string{"staff_id": userID})
+    default:
+      writeJSON(w, http.StatusMethodNotAllowed, errMsg("method not allowed"))
+    }
+  }
+}
+
+func adminStaffItemHandler(db *sql.DB) http.HandlerFunc {
+  return func(w http.ResponseWriter, r *http.Request) {
+    if _, err := requireRoles(db, r, "owner", "admin"); err != nil {
+      writeJSON(w, http.StatusUnauthorized, errMsg("unauthorized"))
+      return
+    }
+    id := strings.TrimPrefix(r.URL.Path, "/admin/staff/")
+    id = strings.TrimSpace(id)
+    if id == "" {
+      writeJSON(w, http.StatusBadRequest, errMsg("missing id"))
+      return
+    }
+    switch r.Method {
+    case http.MethodPut:
+      var req AdminUserUpdateRequest
+      if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        writeJSON(w, http.StatusBadRequest, errMsg("invalid json"))
+        return
+      }
+      role := strings.ToLower(strings.TrimSpace(req.Role))
+      if role == "" {
+        role = "staff"
+      }
+      email := strings.ToLower(strings.TrimSpace(req.Email))
+      if req.Name == "" || email == "" || req.Phone == "" {
+        writeJSON(w, http.StatusBadRequest, errMsg("name, email, phone required"))
+        return
+      }
+      if strings.TrimSpace(req.Password) != "" {
+        hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+        if err != nil {
+          writeJSON(w, http.StatusInternalServerError, errMsg("hash failed"))
+          return
+        }
+        _, err = db.Exec(`UPDATE users SET name = $1, email = $2, phone = $3, password_hash = $4, role = $5 WHERE id = $6 AND is_admin = TRUE`,
+          req.Name, email, nullIfEmpty(normalizePhone(req.Phone)), string(hash), role, id)
+        if err != nil {
+          writeJSON(w, http.StatusBadRequest, errMsg("update staff failed"))
+          return
+        }
+      } else {
+        _, err := db.Exec(`UPDATE users SET name = $1, email = $2, phone = $3, role = $4 WHERE id = $5 AND is_admin = TRUE`,
+          req.Name, email, nullIfEmpty(normalizePhone(req.Phone)), role, id)
+        if err != nil {
+          writeJSON(w, http.StatusBadRequest, errMsg("update staff failed"))
+          return
+        }
+      }
+      writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+    case http.MethodDelete:
+      _, err := db.Exec(`DELETE FROM users WHERE id = $1 AND is_admin = TRUE`, id)
+      if err != nil {
+        writeJSON(w, http.StatusBadRequest, errMsg("delete staff failed"))
+        return
+      }
+      writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+    default:
+      writeJSON(w, http.StatusMethodNotAllowed, errMsg("method not allowed"))
+    }
+  }
+}
+
+func adminDeliveryZoneItemHandler(db *sql.DB) http.HandlerFunc {
+  return func(w http.ResponseWriter, r *http.Request) {
+    if _, err := requireRoles(db, r, "owner", "admin"); err != nil {
+      writeJSON(w, http.StatusUnauthorized, errMsg("unauthorized"))
+      return
+    }
+    id := strings.TrimPrefix(r.URL.Path, "/admin/delivery/zones/")
+    id = strings.TrimSpace(id)
+    if id == "" {
+      writeJSON(w, http.StatusBadRequest, errMsg("missing id"))
+      return
+    }
+    switch r.Method {
+    case http.MethodPut:
+      var req DeliveryZoneRequest
+      if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        writeJSON(w, http.StatusBadRequest, errMsg("invalid json"))
+        return
+      }
+      if req.Name == "" {
+        writeJSON(w, http.StatusBadRequest, errMsg("name required"))
+        return
+      }
+      if req.FlatFee < 0 {
+        req.FlatFee = 0
+      }
+      _, err := db.Exec(`UPDATE delivery_zones SET name = $1, flat_fee = $2, active = $3 WHERE id = $4`, req.Name, req.FlatFee, req.Active, id)
+      if err != nil {
+        writeJSON(w, http.StatusBadRequest, errMsg("update zone failed"))
+        return
+      }
+      writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+    case http.MethodDelete:
+      _, err := db.Exec(`DELETE FROM delivery_zones WHERE id = $1`, id)
+      if err != nil {
+        writeJSON(w, http.StatusBadRequest, errMsg("delete zone failed"))
+        return
+      }
+      writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+    default:
+      writeJSON(w, http.StatusMethodNotAllowed, errMsg("method not allowed"))
+    }
+  }
+}
+
+func adminProductsHandler(db *sql.DB) http.HandlerFunc {
+  uploadHandler := productImageUploadHandler(db)
+  return func(w http.ResponseWriter, r *http.Request) {
+    if strings.HasSuffix(r.URL.Path, "/image") {
+      uploadHandler(w, r)
+      return
+    }
+    if _, err := requireRoles(db, r, "owner", "admin"); err != nil {
+      writeJSON(w, http.StatusUnauthorized, errMsg("unauthorized"))
+      return
+    }
+    id := strings.TrimPrefix(r.URL.Path, "/admin/products/")
+    id = strings.TrimSpace(id)
+    if id == "" {
+      writeJSON(w, http.StatusBadRequest, errMsg("missing id"))
+      return
+    }
+    switch r.Method {
+    case http.MethodPut:
+      var req ProductCreateRequest
+      if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        writeJSON(w, http.StatusBadRequest, errMsg("invalid json"))
+        return
+      }
+      if req.Name == "" || req.Price <= 0 || req.Stock < 0 {
+        writeJSON(w, http.StatusBadRequest, errMsg("name, price, stock required"))
+        return
+      }
+      categoryID := sql.NullString{}
+      if strings.TrimSpace(req.Category) != "" {
+        cid, err := ensureCategory(db, req.Category)
+        if err != nil {
+          writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
+          return
+        }
+        categoryID = sql.NullString{String: cid, Valid: true}
+      }
+      _, err := db.Exec(`UPDATE products SET category_id = $1, name = $2, description = $3, price = $4, stock = $5 WHERE id = $6`,
+        categoryID, req.Name, req.Description, req.Price, req.Stock, id)
+      if err != nil {
+        writeJSON(w, http.StatusBadRequest, errMsg("update product failed"))
+        return
+      }
+      writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+    case http.MethodDelete:
+      _, err := db.Exec(`DELETE FROM products WHERE id = $1`, id)
+      if err != nil {
+        writeJSON(w, http.StatusBadRequest, errMsg("delete product failed"))
+        return
+      }
+      writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
     default:
       writeJSON(w, http.StatusMethodNotAllowed, errMsg("method not allowed"))
     }

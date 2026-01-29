@@ -37,6 +37,15 @@ public class BookingRepository {
     return id;
   }
 
+  public void updateSchedule(String id, ScheduleRequest req) {
+    jdbc.update("UPDATE doctor_schedules SET doctor_name = ?, day_of_week = ?, start_time = ?, end_time = ?, location = ? WHERE id = ?",
+      req.doctor_name(), req.day_of_week(), req.start_time(), req.end_time(), req.location(), id);
+  }
+
+  public void deleteSchedule(String id) {
+    jdbc.update("DELETE FROM doctor_schedules WHERE id = ?", id);
+  }
+
   public String createAppointment(AppointmentRequest req) {
     String id = UUID.randomUUID().toString();
     jdbc.update("INSERT INTO appointments (id, customer_name, phone, pet_name, service_type, schedule_id) VALUES (?,?,?,?,?,?)",
@@ -44,10 +53,18 @@ public class BookingRepository {
     return id;
   }
 
+  public void updateAppointmentStatus(String id, String status) {
+    jdbc.update("UPDATE appointments SET status = ? WHERE id = ?", status, id);
+  }
+
   public String createServiceBooking(ServiceBookingRequest req) {
     String id = UUID.randomUUID().toString();
     jdbc.update("INSERT INTO service_bookings (id, customer_name, phone, service_type, notes, date) VALUES (?,?,?,?,?,?)",
       id, req.customer_name(), req.phone(), req.service_type(), req.notes(), req.date());
     return id;
+  }
+
+  public void updateServiceBookingStatus(String id, String status) {
+    jdbc.update("UPDATE service_bookings SET status = ? WHERE id = ?", status, id);
   }
 }

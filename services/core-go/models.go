@@ -103,6 +103,14 @@ type AdminUserCreateRequest struct {
   Role     string `json:"role"`
 }
 
+type AdminUserUpdateRequest struct {
+  Name     string `json:"name"`
+  Email    string `json:"email"`
+  Phone    string `json:"phone"`
+  Password string `json:"password"`
+  Role     string `json:"role"`
+}
+
 type OrderStatusRequest struct {
   Status string `json:"status"`
 }
