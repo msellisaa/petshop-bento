@@ -44,17 +44,25 @@ Auth:
 - GET /admin/members
 - GET /admin/vouchers
 - POST /admin/vouchers
+- PUT /admin/vouchers/{code}
+- DELETE /admin/vouchers/{code}
 - GET /admin/orders
 - PUT /admin/orders/{id}/status
+- PUT /admin/staff/{id}
+- DELETE /admin/staff/{id}
 - POST /webhooks/midtrans
 - POST /payments/midtrans/snap
 - GET /payments/midtrans/status/{orderId}
 - POST /uploads/avatar
 - GET /admin/delivery/zones
 - POST /admin/delivery/zones
+- PUT /admin/delivery/zones/{id}
+- DELETE /admin/delivery/zones/{id}
 - GET /admin/delivery/settings
 - PUT /admin/delivery/settings
 - POST /admin/products/{id}/image (multipart form field: image)
+- PUT /admin/products/{id}
+- DELETE /admin/products/{id}
 
 ## Booking API (Java)
 Base URL: http://localhost:8082
@@ -64,6 +72,8 @@ Admin auth:
 
 - GET /health
 - GET /schedules
+- PUT /schedules/{id}
+- DELETE /schedules/{id}
 - POST /appointments
 - POST /services/booking
 - POST /payments/midtrans/snap
@@ -71,3 +81,5 @@ Admin auth:
 - POST /payments/midtrans/webhook
 - GET /admin/appointments
 - GET /admin/service-bookings
+- PUT /admin/appointments/{id}/status
+- PUT /admin/service-bookings/{id}/status

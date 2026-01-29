@@ -42,6 +42,24 @@ public class BookingController {
     return ResponseEntity.ok(Map.of("schedule_id", id));
   }
 
+  @PutMapping("/schedules/{id}")
+  public ResponseEntity<Map<String, String>> updateSchedule(@PathVariable String id, @RequestBody ScheduleRequest req, @RequestHeader(value = "X-Admin-Secret", required = false) String secret) {
+    if (!isAdmin(secret)) {
+      return ResponseEntity.status(401).body(Map.of("error", "unauthorized"));
+    }
+    repo.updateSchedule(id, req);
+    return ResponseEntity.ok(Map.of("status", "ok"));
+  }
+
+  @DeleteMapping("/schedules/{id}")
+  public ResponseEntity<Map<String, String>> deleteSchedule(@PathVariable String id, @RequestHeader(value = "X-Admin-Secret", required = false) String secret) {
+    if (!isAdmin(secret)) {
+      return ResponseEntity.status(401).body(Map.of("error", "unauthorized"));
+    }
+    repo.deleteSchedule(id);
+    return ResponseEntity.ok(Map.of("status", "ok"));
+  }
+
   @PostMapping("/appointments")
   public ResponseEntity<Map<String, String>> createAppointment(@RequestBody AppointmentRequest req) {
     String id = repo.createAppointment(req);
@@ -62,12 +80,38 @@ public class BookingController {
     return repo.listAppointments();
   }
 
+  @PutMapping("/admin/appointments/{id}/status")
+  public ResponseEntity<Map<String, String>> updateAppointmentStatus(@PathVariable String id, @RequestBody Map<String, String> body, @RequestHeader(value = "X-Admin-Secret", required = false) String secret) {
+    if (!isAdmin(secret)) {
+      return ResponseEntity.status(401).body(Map.of("error", "unauthorized"));
+    }
+    String status = body.getOrDefault("status", "").trim();
+    if (status.isEmpty()) {
+      return ResponseEntity.badRequest().body(Map.of("error", "status required"));
+    }
+    repo.updateAppointmentStatus(id, status.toUpperCase());
+    return ResponseEntity.ok(Map.of("status", "ok"));
+  }
+
   @GetMapping("/admin/service-bookings")
   public ResponseEntity<?> serviceBookings(@RequestHeader(value = "X-Admin-Secret", required = false) String secret) {
     if (!isAdmin(secret)) {
       return ResponseEntity.status(401).body(Map.of("error", "unauthorized"));
     }
     return repo.listServiceBookings();
+  }
+
+  @PutMapping("/admin/service-bookings/{id}/status")
+  public ResponseEntity<Map<String, String>> updateServiceBookingStatus(@PathVariable String id, @RequestBody Map<String, String> body, @RequestHeader(value = "X-Admin-Secret", required = false) String secret) {
+    if (!isAdmin(secret)) {
+      return ResponseEntity.status(401).body(Map.of("error", "unauthorized"));
+    }
+    String status = body.getOrDefault("status", "").trim();
+    if (status.isEmpty()) {
+      return ResponseEntity.badRequest().body(Map.of("error", "status required"));
+    }
+    repo.updateServiceBookingStatus(id, status.toUpperCase());
+    return ResponseEntity.ok(Map.of("status", "ok"));
   }
 
   private boolean isAdmin(String secret) {
