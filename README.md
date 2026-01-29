@@ -140,7 +140,9 @@ See `docs/api.md` for full endpoints.
 ## Contribution
 
 We welcome contributions. Contributors:
-- Msellisaa (Owner)
+- Michelle Isaura Aishaa (Owner) - https://github.com/msellisaa
+- Ali Ahmad Nawawi - https://github.com/aliahmadnawawi
+- Ziziel - https://github.com/nazilalailatulafifah
 
 Want to contribute? Please open an issue or submit a PR with clear description and screenshots if UI changes.
 
