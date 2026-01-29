@@ -21,6 +21,7 @@ Full-stack petshop platform for cat products, services, and vet scheduling in In
 | Rewards | Tier-based discounts, cashback wallet, vouchers, welcome voucher |
 | Payments | Midtrans Snap payment, status checking, webhook updates |
 | Delivery | Flat zone fee, per-km fee (distance), external shipping provider |
+| Personalization | Event tracking + recommendation service (Python) |
 | Media | Product image upload and display |
 | Admin | Products, schedules, appointments, bookings, members, vouchers, staff management |
 | Analytics | Member spend ranking, order list with status controls |
@@ -38,6 +39,7 @@ Full-stack petshop platform for cat products, services, and vet scheduling in In
 - `apps/admin` - Admin dashboard
 - `services/core-go` - Core API (Go)
 - `services/booking-java` - Booking & payment API (Java)
+- `services/reco-python` - Recommendation API (Python)
 - `infra/db` - SQL schemas
 - `docs` - API and architecture notes
 
@@ -60,6 +62,11 @@ docker compose up -d db-core db-booking
 # Go core
 cd services\core-go
  go run .
+
+# Python reco
+cd services\reco-python
+ pip install -r requirements.txt
+ uvicorn app:app --host 0.0.0.0 --port 8090
 
 # Java booking
 cd services\booking-java
@@ -114,6 +121,22 @@ Supported delivery modes:
 
 Use `POST /delivery/quote` to calculate shipping fee before checkout.
 
+### Delivery Tracking (Internal Courier)
+- Driver update: `POST /delivery/track` (optional `X-Driver-Token`)
+- Customer tracking: `GET /delivery/track/{orderId}?token=...` or `/delivery/track/{orderId}/stream?token=...` (SSE)
+- Driver mode UI: open `apps/web` with `?driver=1`
+- Share tracking link: `?track={orderId}&token={tracking_token}#tracking`
+  - `tracking_token` didapat dari response `POST /orders`
+  - Set `CORE_DRIVER_TOKEN_HASH` to store hashed token (SHA-256 hex), or use `CORE_DRIVER_TOKEN` in plain
+
+Database migration for tracking:
+- `infra/db/migrations/20260129_add_delivery_tracking.sql`
+- helper script: `infra/db/migrate_tracking.ps1` (requires `psql` in PATH)
+
+Database migration for events:
+- `infra/db/migrations/20260129_add_events.sql`
+- helper script: `infra/db/migrate_events.ps1` (requires `psql` in PATH)
+
 ### External Provider (Placeholder)
 Default provider: **Shipper** (placeholder integration). Set in `.env`:
 - `EXTERNAL_SHIPPING_PROVIDER=shipper`
@@ -127,11 +150,15 @@ When configured, the code currently returns a mocked fee and message. Replace th
 
 Key environment variables:
 - `CORE_DB_URL`, `CORE_PORT`
+- `FRONTEND_ORIGIN` (CORS allowlist, comma-separated)
+- `RECO_DB_URL`, `RECO_PORT`
 - `BOOKING_DB_URL`, `BOOKING_DB_USER`, `BOOKING_DB_PASS`, `BOOKING_PORT`
 - `MIDTRANS_SERVER_KEY`, `MIDTRANS_SNAP_URL`, `MIDTRANS_STATUS_URL`
 - `ADMIN_BOOTSTRAP_SECRET`, `CORE_WEBHOOK_SECRET`, `BOOKING_ADMIN_SECRET`
 - `EXTERNAL_SHIPPING_PROVIDER`, `EXTERNAL_SHIPPING_URL`, `EXTERNAL_SHIPPING_KEY`
 - `SESSION_TTL_HOURS`
+- `GOOGLE_MAPS_KEY` (reverse geocode in core API)
+- `VITE_GOOGLE_MAPS_KEY` (static map in web)
 
 ## API Overview
 

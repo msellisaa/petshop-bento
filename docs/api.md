@@ -15,12 +15,30 @@ Auth:
 - PUT /cart/items
 - DELETE /cart/items
 - GET /cart
+- POST /events
+  - body: `{ session_id, event_type, product_id, metadata }`
+  - event_type: view_product | add_to_cart | remove_cart | checkout | promo_click
 - POST /orders
   - body supports `voucher_code` and `wallet_use` (cashback amount)
+  - response includes `tracking_token` for secure tracking link
 - GET /delivery/zones
 - POST /delivery/quote
   - body: `{ type: "zone|per_km|external", zone_id, lat, lng, distance_km }`
   - external provider response may include `message` when in placeholder mode
+- POST /delivery/track
+  - driver update: `{ order_id, driver_id, status, lat, lng, speed_kph, heading }`
+  - optional auth: `X-Driver-Token` must match `CORE_DRIVER_TOKEN` if set
+  - rate limit applied per IP
+- GET /delivery/track/{orderId}?token=...
+  - requires `token` if order has `tracking_token`
+  - returns `{ latest, trail }` (trail includes recent points)
+  - rate limit applied per IP
+- GET /delivery/track/{orderId}/stream?token=...
+  - requires `token` if order has `tracking_token`
+  - server-sent events (SSE), emits `tracking` events
+  - rate limit applied per IP
+- GET /geo/reverse?lat=...&lng=...
+  - returns `{ address, locality, source }`, uses Google if `GOOGLE_MAPS_KEY` is set
 - POST /auth/register
 - POST /auth/login
   - `email` field accepts email or phone number
@@ -95,3 +113,9 @@ Admin auth:
 - GET /admin/service-bookings
 - PUT /admin/appointments/{id}/status
 - PUT /admin/service-bookings/{id}/status
+
+## Recommendation API (Python)
+Base URL: http://localhost:8090
+
+- GET /health
+- GET /recommendations?user_id=...&session_id=...&limit=6

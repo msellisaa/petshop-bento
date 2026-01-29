@@ -4,6 +4,7 @@ import (
   "database/sql"
   "encoding/json"
   "net/http"
+  "os"
   "strings"
 )
 
@@ -301,9 +302,14 @@ func orderHandler(db *sql.DB) http.HandlerFunc {
       total = total - walletUsed
     }
 
+    trackingToken, err := randToken(16)
+    if err != nil {
+      writeJSON(w, http.StatusInternalServerError, errMsg("tracking token failed"))
+      return
+    }
     var orderID string
-    err = tx.QueryRow(`INSERT INTO orders (cart_id, user_id, customer_name, phone, address, shipping_fee, subtotal, discount, voucher_code, cashback, wallet_used, total) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
-      req.CartID, nullIfEmpty(userID), req.CustomerName, req.Phone, req.Address, shippingFee, subtotal, discount+voucherDiscount, nullIfEmpty(req.VoucherCode), cashback, walletUsed, total).
+    err = tx.QueryRow(`INSERT INTO orders (cart_id, user_id, customer_name, phone, address, shipping_fee, subtotal, discount, voucher_code, cashback, wallet_used, total, tracking_token) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
+      req.CartID, nullIfEmpty(userID), req.CustomerName, req.Phone, req.Address, shippingFee, subtotal, discount+voucherDiscount, nullIfEmpty(req.VoucherCode), cashback, walletUsed, total, trackingToken).
       Scan(&orderID)
     if err != nil {
       writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
@@ -377,6 +383,7 @@ func orderHandler(db *sql.DB) http.HandlerFunc {
     }
     writeJSON(w, http.StatusOK, map[string]any{
       "order_id": orderID,
+      "tracking_token": trackingToken,
       "subtotal": subtotal,
       "discount": discount + voucherDiscount,
       "cashback": cashback,
@@ -389,8 +396,27 @@ func orderHandler(db *sql.DB) http.HandlerFunc {
 
 func withCORS(next http.Handler) http.Handler {
   return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-    w.Header().Set("Access-Control-Allow-Origin", "*")
-    w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Auth-Token, X-Service-Secret, X-Admin-Secret")
+    origin := r.Header.Get("Origin")
+    allowed := os.Getenv("FRONTEND_ORIGIN")
+    if allowed == "" {
+      w.Header().Set("Access-Control-Allow-Origin", "*")
+    } else {
+      allowedList := strings.Split(allowed, ",")
+      matched := ""
+      for _, v := range allowedList {
+        v = strings.TrimSpace(v)
+        if v != "" && v == origin {
+          matched = v
+          break
+        }
+      }
+      if matched != "" {
+        w.Header().Set("Access-Control-Allow-Origin", matched)
+      } else if len(allowedList) > 0 {
+        w.Header().Set("Access-Control-Allow-Origin", strings.TrimSpace(allowedList[0]))
+      }
+    }
+    w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Auth-Token, X-Service-Secret, X-Admin-Secret, X-Driver-Token, X-Session-Id")
     w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
     if r.Method == http.MethodOptions {
       w.WriteHeader(http.StatusNoContent)

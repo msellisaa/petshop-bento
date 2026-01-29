@@ -22,3 +22,14 @@ services:
       - "5434:5432"
     volumes:
       - ./infra/db/booking_schema.sql:/docker-entrypoint-initdb.d/01_booking_schema.sql:ro
+
+  reco-api:
+    build: ./services/reco-python
+    container_name: petshop_reco_api
+    environment:
+      RECO_DB_URL: postgres://petshop:petshop@db-core:5432/petshop_core?sslmode=disable
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:5173}
+    ports:
+      - "8090:8090"
+    depends_on:
+      - db-core

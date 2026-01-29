@@ -119,8 +119,47 @@ CREATE TABLE orders (
   wallet_used INT NOT NULL DEFAULT 0,
   shipping_fee INT NOT NULL DEFAULT 0,
   total INT NOT NULL DEFAULT 0,
+  tracking_token TEXT,
   created_at TIMESTAMP DEFAULT NOW()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS orders_tracking_token_idx ON orders(tracking_token);
+
+CREATE TABLE delivery_tracking (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  order_id UUID REFERENCES orders(id) ON DELETE CASCADE,
+  driver_id TEXT,
+  status TEXT NOT NULL DEFAULT 'ON_ROUTE',
+  lat DOUBLE PRECISION NOT NULL,
+  lng DOUBLE PRECISION NOT NULL,
+  speed_kph DOUBLE PRECISION NOT NULL DEFAULT 0,
+  heading DOUBLE PRECISION NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX delivery_tracking_order_id_idx ON delivery_tracking(order_id, created_at DESC);
+
+CREATE TABLE delivery_tracking_access (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  order_id UUID REFERENCES orders(id) ON DELETE CASCADE,
+  ip_address TEXT,
+  user_agent TEXT,
+  accessed_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE events (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  session_id TEXT,
+  event_type TEXT NOT NULL,
+  product_id UUID REFERENCES products(id) ON DELETE SET NULL,
+  metadata JSONB,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX events_user_id_idx ON events(user_id, created_at DESC);
+CREATE INDEX events_session_id_idx ON events(session_id, created_at DESC);
+CREATE INDEX events_product_id_idx ON events(product_id, created_at DESC);
 
 CREATE TABLE expenses (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

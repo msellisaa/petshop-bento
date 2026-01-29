@@ -1,15 +1,104 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import QRCode from 'qrcode'
 
 const CORE_API = import.meta.env.VITE_CORE_API || 'http://localhost:8081'
 const BOOKING_API = import.meta.env.VITE_BOOKING_API || 'http://localhost:8082'
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
+const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || ''
+const RECO_API = import.meta.env.VITE_RECO_API || 'http://localhost:8090'
 
 const rupiah = (n) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(n || 0)
+const INDONESIA_TIMEZONES = {
+  'Asia/Jakarta': 'WIB',
+  'Asia/Makassar': 'WITA',
+  'Asia/Jayapura': 'WIT'
+}
+const resolveIndonesiaTimeZone = () => {
+  const detected = Intl.DateTimeFormat().resolvedOptions().timeZone
+  return INDONESIA_TIMEZONES[detected] ? detected : 'Asia/Jakarta'
+}
+const formatIndonesiaTime = (date, timeZone) => (
+  new Intl.DateTimeFormat('id-ID', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone
+  }).format(date)
+)
+const getZonedNow = (timeZone) => new Date(new Date().toLocaleString('en-US', { timeZone }))
+const getFlashSaleEnd = (timeZone) => {
+  const now = getZonedNow(timeZone)
+  const end = new Date(now)
+  end.setHours(23, 59, 59, 999)
+  if (end <= now) {
+    end.setDate(end.getDate() + 1)
+  }
+  return end
+}
+
+const buildGeoProxyURL = (lat, lng) => (
+  `${CORE_API}/geo/reverse?lat=${lat}&lng=${lng}`
+)
+
+const isUUID = (value) => (
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value || '')
+)
+
+const normalizeOrderId = (value) => (value || '').trim().toLowerCase()
+const formatElapsed = (ms) => {
+  const total = Math.max(0, Math.floor(ms / 1000))
+  const mins = Math.floor(total / 60)
+  const secs = total % 60
+  if (mins >= 60) {
+    const hours = Math.floor(mins / 60)
+    return `${hours}j ${mins % 60}m`
+  }
+  if (mins > 0) return `${mins}m ${secs}s`
+  return `${secs}s`
+}
+
+const buildTrackingUrl = (base, orderId, token, stream = false) => {
+  if (!orderId) return ''
+  const path = stream ? `/delivery/track/${orderId}/stream` : `/delivery/track/${orderId}`
+  const url = new URL(path, base)
+  if (token) url.searchParams.set('token', token)
+  return url.toString()
+}
+
+const getSessionId = () => {
+  if (typeof window === 'undefined') return ''
+  const existing = localStorage.getItem('session_id')
+  if (existing) return existing
+  const next = window.crypto?.randomUUID
+    ? window.crypto.randomUUID()
+    : `sess_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`
+  localStorage.setItem('session_id', next)
+  return next
+}
 
 export default function App() {
+  const [viewMode] = useState(() => {
+    if (typeof window === 'undefined') return 'app'
+    const params = new URLSearchParams(window.location.search)
+    return params.get('driver') === '1' ? 'driver' : 'app'
+  })
+  const [trackingOrderId, setTrackingOrderId] = useState(() => {
+    if (typeof window === 'undefined') return ''
+    const params = new URLSearchParams(window.location.search)
+    return params.get('track') || ''
+  })
+  const [trackingToken, setTrackingToken] = useState(() => {
+    if (typeof window === 'undefined') return ''
+    const params = new URLSearchParams(window.location.search)
+    return params.get('token') || ''
+  })
   const [products, setProducts] = useState([])
   const [schedules, setSchedules] = useState([])
   const [zones, setZones] = useState([])
+  const [sessionId, setSessionId] = useState('')
+  const [recommendations, setRecommendations] = useState([])
   const [cartId, setCartId] = useState(localStorage.getItem('cart_id') || '')
   const [cartItems, setCartItems] = useState([])
   const [cartOpen, setCartOpen] = useState(false)
@@ -48,11 +137,380 @@ export default function App() {
   const [appointmentStatus, setAppointmentStatus] = useState('')
   const [serviceForm, setServiceForm] = useState({ customer_name: '', phone: '', service_type: 'Grooming', notes: '', date: '' })
   const [serviceStatus, setServiceStatus] = useState('')
+  const [carouselIndex, setCarouselIndex] = useState(0)
+  const [carouselPaused, setCarouselPaused] = useState(false)
+  const [timeZone, setTimeZone] = useState('Asia/Jakarta')
+  const [zoneLabel, setZoneLabel] = useState('WIB')
+  const [nowText, setNowText] = useState('')
+  const [flashCountdown, setFlashCountdown] = useState('00:00:00')
+  const [geoStatus, setGeoStatus] = useState('')
+  const [geoCoords, setGeoCoords] = useState({ lat: '', lng: '' })
+  const [geoAddress, setGeoAddress] = useState('')
+  const [geoLocality, setGeoLocality] = useState('')
+  const [trackingInfo, setTrackingInfo] = useState(null)
+  const [trackingTrail, setTrackingTrail] = useState([])
+  const [trackingStatus, setTrackingStatus] = useState('')
+  const [trackingError, setTrackingError] = useState('')
+  const [trackingQrData, setTrackingQrData] = useState('')
+  const [autoCopyPulse, setAutoCopyPulse] = useState(false)
+  const [toasts, setToasts] = useState([])
+  const [showQrOverlay, setShowQrOverlay] = useState(false)
+  const [trackingAge, setTrackingAge] = useState('')
+  const [muteBeep, setMuteBeep] = useState(() => {
+    if (typeof window === 'undefined') return true
+    const stored = localStorage.getItem('mute_beep')
+    return stored ? stored === 'true' : true
+  })
+  const [driverMode, setDriverMode] = useState(() => {
+    if (typeof window === 'undefined') return false
+    const stored = localStorage.getItem('driver_mode')
+    return stored ? stored === 'true' : false
+  })
+  const [driverToken, setDriverToken] = useState('')
+  const [driverStatus, setDriverStatus] = useState('')
+  const [driverLive, setDriverLive] = useState(false)
+  const [driverForm, setDriverForm] = useState({
+    order_id: '',
+    driver_id: '',
+    status: 'ON_ROUTE',
+    lat: '',
+    lng: '',
+    speed_kph: '',
+    heading: ''
+  })
+  const [shareStatus, setShareStatus] = useState('')
+  const trackInputRef = useRef(null)
+  const viewedProductsRef = useRef(new Set())
+  const carouselRef = useRef(null)
+  const touchStart = useRef(null)
+  const driverWatchId = useRef(null)
+  const driverLastSent = useRef(0)
 
   useEffect(() => {
     fetch(`${CORE_API}/products`).then(r => r.json()).then(setProducts).catch(() => setProducts([]))
     fetch(`${BOOKING_API}/schedules`).then(r => r.json()).then(setSchedules).catch(() => setSchedules([]))
     fetch(`${CORE_API}/delivery/zones`).then(r => r.json()).then(setZones).catch(() => setZones([]))
+  }, [])
+
+  useEffect(() => {
+    setSessionId(getSessionId())
+  }, [])
+
+  useEffect(() => {
+    const tz = resolveIndonesiaTimeZone()
+    setTimeZone(tz)
+    setZoneLabel(INDONESIA_TIMEZONES[tz] || 'WIB')
+  }, [])
+
+  useEffect(() => {
+    if (!timeZone) return
+    const tick = () => {
+      setNowText(`${formatIndonesiaTime(new Date(), timeZone)} ${INDONESIA_TIMEZONES[timeZone] || 'WIB'}`)
+    }
+    tick()
+    const id = setInterval(tick, 60 * 1000)
+    return () => clearInterval(id)
+  }, [timeZone])
+
+  useEffect(() => {
+    if (!timeZone) return
+    const end = getFlashSaleEnd(timeZone)
+    const tick = () => {
+      const now = getZonedNow(timeZone)
+      const diff = Math.max(0, end.getTime() - now.getTime())
+      const hours = String(Math.floor(diff / 3600000)).padStart(2, '0')
+      const minutes = String(Math.floor((diff % 3600000) / 60000)).padStart(2, '0')
+      const seconds = String(Math.floor((diff % 60000) / 1000)).padStart(2, '0')
+      setFlashCountdown(`${hours}:${minutes}:${seconds}`)
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [timeZone])
+
+  useEffect(() => {
+    if (!promoSlides.length || carouselPaused) return
+    const id = setInterval(() => {
+      setCarouselIndex((prev) => (prev + 1) % promoSlides.length)
+    }, 4500)
+    return () => clearInterval(id)
+  }, [carouselPaused])
+
+  const handleCarouselSwipe = (direction) => {
+    if (direction === 'left') {
+      setCarouselIndex((prev) => (prev + 1) % promoSlides.length)
+    } else if (direction === 'right') {
+      setCarouselIndex((prev) => (prev - 1 + promoSlides.length) % promoSlides.length)
+    }
+  }
+
+  const handleTouchStart = (event) => {
+    const touch = event.touches?.[0]
+    if (!touch) return
+    touchStart.current = { x: touch.clientX, y: touch.clientY }
+  }
+
+  const handleTouchEnd = (event) => {
+    const touch = event.changedTouches?.[0]
+    if (!touch || !touchStart.current) return
+    const dx = touch.clientX - touchStart.current.x
+    const dy = touch.clientY - touchStart.current.y
+    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
+      handleCarouselSwipe(dx < 0 ? 'left' : 'right')
+    }
+    touchStart.current = null
+  }
+
+  const reverseGeocode = async (lat, lng) => {
+    try {
+      const resp = await fetch(buildGeoProxyURL(lat, lng))
+      const data = await resp.json()
+      if (data.error) return { address: '', locality: '' }
+      return {
+        address: data.address || '',
+        locality: data.locality || ''
+      }
+    } catch (err) {
+      return { address: '', locality: '' }
+    }
+  }
+
+  const handleUseLocation = () => {
+    if (!navigator.geolocation) {
+      setGeoStatus('Perangkat tidak mendukung geolocation.')
+      return
+    }
+    setGeoStatus('Mengambil lokasi...')
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude.toFixed(6)
+        const lng = pos.coords.longitude.toFixed(6)
+        setGeoCoords({ lat, lng })
+        setDeliveryInput((prev) => ({ ...prev, lat, lng }))
+        const resolved = await reverseGeocode(lat, lng)
+        if (resolved.address) {
+          setGeoAddress(resolved.address)
+        }
+        if (resolved.locality) {
+          setGeoLocality(resolved.locality)
+        }
+        if (!checkout.address && resolved.address) {
+          setCheckout((prev) => ({ ...prev, address: resolved.address }))
+        }
+        setGeoStatus(resolved.address ? 'Lokasi berhasil diambil.' : 'Lokasi berhasil diambil (tanpa alamat).')
+      },
+      (err) => {
+        const message = err.code === 1 ? 'Izin lokasi ditolak.' : 'Lokasi tidak tersedia.'
+        setGeoStatus(message)
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    )
+  }
+
+  const sendDriverUpdate = async (payload) => {
+    try {
+      if (!payload.order_id || !isUUID(payload.order_id)) {
+        setDriverStatus('Order ID tidak valid.')
+        return false
+      }
+      setDriverStatus('Mengirim lokasi...')
+      const resp = await fetch(`${CORE_API}/delivery/track`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(driverToken ? { 'X-Driver-Token': driverToken } : {})
+        },
+        body: JSON.stringify(payload)
+      })
+      const data = await resp.json()
+      if (data.error) {
+        setDriverStatus(data.error)
+        return false
+      }
+      setDriverStatus('Update lokasi terkirim.')
+      return true
+    } catch (err) {
+      setDriverStatus('Gagal mengirim lokasi.')
+      return false
+    }
+  }
+
+  const handleDriverUseLocation = () => {
+    if (!navigator.geolocation) {
+      setDriverStatus('Perangkat tidak mendukung geolocation.')
+      return
+    }
+    setDriverStatus('Mengambil lokasi driver...')
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = pos.coords.latitude.toFixed(6)
+        const lng = pos.coords.longitude.toFixed(6)
+        setDriverForm((prev) => ({ ...prev, lat, lng }))
+        setDriverStatus('Lokasi driver siap.')
+      },
+      () => setDriverStatus('Lokasi driver tidak tersedia.'),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    )
+  }
+
+  const startDriverLive = () => {
+    if (!navigator.geolocation) {
+      setDriverStatus('Perangkat tidak mendukung geolocation.')
+      return
+    }
+    if (!driverForm.order_id) {
+      setDriverStatus('Order ID wajib diisi.')
+      return
+    }
+    setDriverLive(true)
+    driverLastSent.current = 0
+    driverWatchId.current = navigator.geolocation.watchPosition(
+      (pos) => {
+        const now = Date.now()
+        if (now - driverLastSent.current < 4000) return
+        driverLastSent.current = now
+        const payload = {
+          order_id: driverForm.order_id,
+          driver_id: driverForm.driver_id || 'DRV-LOCAL',
+          status: driverForm.status || 'ON_ROUTE',
+          lat: Number(pos.coords.latitude.toFixed(6)),
+          lng: Number(pos.coords.longitude.toFixed(6)),
+          speed_kph: Number(((pos.coords.speed || 0) * 3.6).toFixed(1)),
+          heading: Number(pos.coords.heading || 0)
+        }
+        sendDriverUpdate(payload)
+      },
+      () => {
+        setDriverStatus('Live tracking gagal.')
+        setDriverLive(false)
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 2000 }
+    )
+  }
+
+  const stopDriverLive = () => {
+    if (driverWatchId.current) {
+      navigator.geolocation.clearWatch(driverWatchId.current)
+      driverWatchId.current = null
+    }
+    setDriverLive(false)
+    setDriverStatus('Live tracking berhenti.')
+  }
+
+  const handleCopyTrackingLink = async () => {
+    if (!trackingShareUrl) return
+    try {
+      await navigator.clipboard.writeText(trackingShareUrl)
+      setShareStatus('Link tracking disalin.')
+      setAutoCopyPulse(true)
+      showToast('Link tracking disalin', 'success')
+      if (navigator.vibrate) navigator.vibrate(40)
+      if (!muteBeep && (window.AudioContext || window.webkitAudioContext)) {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)()
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.type = 'sine'
+        osc.frequency.value = 880
+        gain.gain.value = 0.03
+        osc.connect(gain)
+        gain.connect(ctx.destination)
+        osc.start()
+        osc.stop(ctx.currentTime + 0.08)
+      }
+      setTimeout(() => setAutoCopyPulse(false), 1200)
+    } catch (err) {
+      setShareStatus('Gagal menyalin link.')
+      showToast('Gagal menyalin link', 'error')
+    }
+  }
+
+  const handleTrackLookup = () => {
+    const trimmed = normalizeOrderId(trackingOrderId)
+    if (!trimmed) {
+      setTrackingError('Order ID wajib diisi.')
+      return
+    }
+    if (!isUUID(trimmed)) {
+      setTrackingError('Format Order ID tidak valid.')
+      return
+    }
+    setTrackingOrderId(trimmed)
+    setTrackingError('')
+    setTimeout(() => {
+      const el = document.getElementById('tracking')
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 150)
+  }
+
+  useEffect(() => {
+    if (orderInfo?.order_id) {
+      setDriverForm((prev) => ({ ...prev, order_id: orderInfo.order_id }))
+    }
+  }, [orderInfo])
+
+  useEffect(() => {
+    if (trackingOrderId) {
+      setDriverForm((prev) => ({ ...prev, order_id: trackingOrderId }))
+    }
+  }, [trackingOrderId])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (trackingOrderId && trackInputRef.current) {
+      trackInputRef.current.focus()
+      trackInputRef.current.select()
+    }
+  }, [trackingOrderId])
+
+  useEffect(() => {
+    if (viewMode === 'driver') {
+      const normalized = normalizeOrderId(driverForm.order_id)
+      if (normalized !== trackingOrderId) {
+        setTrackingOrderId(normalized)
+      }
+    }
+  }, [driverForm.order_id, trackingOrderId, viewMode])
+
+  useEffect(() => {
+    if (!trackingShareUrl) {
+      setTrackingQrData('')
+      return
+    }
+    let active = true
+    QRCode.toDataURL(trackingShareUrl, { width: 180, margin: 1 })
+      .then((dataUrl) => {
+        if (active) setTrackingQrData(dataUrl)
+      })
+      .catch(() => {
+        if (active) setTrackingQrData('')
+      })
+    return () => {
+      active = false
+    }
+  }, [trackingShareUrl])
+
+
+
+  useEffect(() => {
+    if (!trackingInfo?.created_at) {
+      setTrackingAge('')
+      return
+    }
+    const tick = () => {
+      const diff = Date.now() - new Date(trackingInfo.created_at).getTime()
+      setTrackingAge(formatElapsed(diff))
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [trackingInfo])
+
+  useEffect(() => {
+    return () => {
+      if (driverWatchId.current) {
+        navigator.geolocation.clearWatch(driverWatchId.current)
+      }
+    }
   }, [])
 
   useEffect(() => {
@@ -91,6 +549,39 @@ export default function App() {
         if (Array.isArray(data)) setMyOrders(data)
       })
   }, [token])
+
+  const trackEvent = (eventType, productId, metadata = {}) => {
+    if (!sessionId && !token) return
+    fetch(`${CORE_API}/events`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'X-Auth-Token': token } : {}),
+        ...(sessionId ? { 'X-Session-Id': sessionId } : {})
+      },
+      body: JSON.stringify({
+        session_id: sessionId,
+        event_type: eventType,
+        product_id: productId,
+        metadata
+      })
+    }).catch(() => {})
+  }
+
+  useEffect(() => {
+    const controller = new AbortController()
+    const params = new URLSearchParams()
+    if (user?.id) params.set('user_id', user.id)
+    if (sessionId) params.set('session_id', sessionId)
+    params.set('limit', '6')
+    fetch(`${RECO_API}/recommendations?${params.toString()}`, { signal: controller.signal })
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data.items)) setRecommendations(data.items)
+      })
+      .catch(() => {})
+    return () => controller.abort()
+  }, [user?.id, sessionId])
 
   useEffect(() => {
     if (!user) return
@@ -156,6 +647,47 @@ export default function App() {
     return list
   }, [products, productQuery, productCategory, productSort])
 
+  const trackingMapUrl = useMemo(() => {
+    if (!trackingInfo?.lat || !trackingInfo?.lng) return ''
+    const center = `${trackingInfo.lat},${trackingInfo.lng}`
+    if (GOOGLE_MAPS_KEY) {
+      return `https://maps.googleapis.com/maps/api/staticmap?center=${center}&zoom=15&size=640x320&markers=color:0xff6b6b|${center}&key=${GOOGLE_MAPS_KEY}`
+    }
+    return `https://staticmap.openstreetmap.de/staticmap.php?center=${center}&zoom=15&size=640x320&markers=${center},red-pushpin`
+  }, [trackingInfo])
+
+  const trackingUpdatedText = useMemo(() => {
+    if (!trackingInfo?.created_at) return ''
+    return `${formatIndonesiaTime(new Date(trackingInfo.created_at), timeZone)} ${zoneLabel}`
+  }, [trackingInfo, timeZone, zoneLabel])
+
+  const activeTrackingOrderId = useMemo(() => (
+    orderInfo?.order_id || trackingOrderId
+  ), [orderInfo, trackingOrderId])
+
+  const activeTrackingToken = useMemo(() => (
+    orderInfo?.tracking_token || trackingToken
+  ), [orderInfo, trackingToken])
+
+  const trackingShareUrl = useMemo(() => {
+    if (typeof window === 'undefined' || !activeTrackingOrderId) return ''
+    const url = new URL(window.location.href)
+    url.searchParams.set('track', activeTrackingOrderId)
+    if (activeTrackingToken) {
+      url.searchParams.set('token', activeTrackingToken)
+    } else {
+      url.searchParams.delete('token')
+    }
+    url.hash = '#tracking'
+    return url.toString()
+  }, [activeTrackingOrderId, activeTrackingToken])
+
+  const trackingWhatsappUrl = useMemo(() => {
+    if (!trackingShareUrl) return ''
+    const text = `Tracking pesanan kamu: ${trackingShareUrl}`
+    return `https://wa.me/?text=${encodeURIComponent(text)}`
+  }, [trackingShareUrl])
+
   const addToCart = async (product) => {
     const body = { cart_id: cartId, product_id: product.id, qty: 1 }
     const resp = await fetch(`${CORE_API}/cart/items`, {
@@ -176,6 +708,9 @@ export default function App() {
       }
       return [...prev, { product_id: product.id, name: product.name, price: product.price, qty: 1 }]
     })
+    if (product?.id) {
+      trackEvent('add_to_cart', product.id)
+    }
   }
 
   const updateCartQty = async (productId, qty) => {
@@ -199,6 +734,9 @@ export default function App() {
     })
     if (resp.ok) {
       setCartItems(prev => prev.filter(i => i.product_id !== productId))
+      if (productId) {
+        trackEvent('remove_cart', productId)
+      }
     }
   }
 
@@ -473,11 +1011,18 @@ export default function App() {
     }
     if (!data.error) {
       setOrderInfo(data)
+      setTrackingInfo(null)
+      setTrackingTrail([])
+      setTrackingStatus('Menyiapkan tracking...')
       setSnapUrl('')
       setPaymentStatus(null)
       setCartItems([])
       setCartId('')
       localStorage.removeItem('cart_id')
+      setTrackingOrderId(data.order_id)
+      setTrackingToken(data.tracking_token || '')
+      setShareStatus('')
+      trackEvent('checkout', null, { order_id: data.order_id, total: data.total })
       if (token) {
         const me = await fetch(`${CORE_API}/me`, { headers: { 'X-Auth-Token': token } }).then(r => r.json())
         if (!me.error) setUser(me)
@@ -485,6 +1030,34 @@ export default function App() {
         if (Array.isArray(orders)) setMyOrders(orders)
       }
       setCheckoutStatus('Order berhasil dibuat.')
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(data.order_id).then(() => {
+          showToast('Order ID disalin', 'success')
+        }).catch(() => {})
+      }
+      setTimeout(() => {
+        let shareUrl = ''
+        if (typeof window !== 'undefined') {
+          const url = new URL(window.location.href)
+          url.searchParams.set('track', data.order_id)
+          if (data.tracking_token) {
+            url.searchParams.set('token', data.tracking_token)
+          } else {
+            url.searchParams.delete('token')
+          }
+          url.hash = '#tracking'
+          shareUrl = url.toString()
+        }
+        if (shareUrl && navigator.clipboard) {
+          navigator.clipboard.writeText(shareUrl).then(() => {
+            setShareStatus('Link tracking otomatis disalin.')
+            setAutoCopyPulse(true)
+            setTimeout(() => setAutoCopyPulse(false), 1200)
+            showToast('Link tracking otomatis disalin', 'success')
+            if (navigator.vibrate) navigator.vibrate(40)
+          }).catch(() => {})
+        }
+      }, 400)
     }
   }
 
@@ -513,6 +1086,14 @@ export default function App() {
     setPaymentStatus(data)
   }
 
+  const handleProductOpen = (product) => {
+    setSelectedProduct(product)
+    if (product?.id && !viewedProductsRef.current.has(product.id)) {
+      viewedProductsRef.current.add(product.id)
+      trackEvent('view_product', product.id)
+    }
+  }
+
   const requestQuote = async () => {
     const payload = {
       type: deliveryType,
@@ -532,6 +1113,66 @@ export default function App() {
       setQuoteInfo(data)
     }
   }
+
+  useEffect(() => {
+    if (!activeTrackingOrderId) return
+    if (!isUUID(activeTrackingOrderId)) {
+      setTrackingError('Format Order ID tidak valid.')
+      setTrackingStatus('')
+      return
+    }
+    setTrackingError('')
+    let active = true
+    let sse
+    const streamUrl = buildTrackingUrl(CORE_API, activeTrackingOrderId, activeTrackingToken, true)
+    const fallbackPoll = async () => {
+      try {
+        const resp = await fetch(buildTrackingUrl(CORE_API, activeTrackingOrderId, activeTrackingToken))
+        if (!resp.ok) {
+          if (active) setTrackingStatus('Tracking belum tersedia.')
+          return
+        }
+        const data = await resp.json()
+        if (!active) return
+        setTrackingInfo(data.latest || null)
+        setTrackingTrail(data.trail || [])
+        setTrackingStatus(data.latest ? 'Tracking aktif.' : 'Menunggu update driver.')
+      } catch (err) {
+        if (active) setTrackingStatus('Tracking gagal dimuat.')
+      }
+    }
+
+    if (window.EventSource) {
+      setTrackingStatus('Realtime via stream...')
+      sse = new EventSource(streamUrl)
+      sse.addEventListener('tracking', (event) => {
+        if (!active) return
+        const payload = JSON.parse(event.data)
+        setTrackingInfo(payload)
+        setTrackingTrail((prev) => [payload, ...prev].slice(0, 6))
+        setTrackingStatus('Tracking realtime aktif.')
+      })
+      sse.onerror = () => {
+        if (!active) return
+        setTrackingStatus('Stream terputus, fallback polling.')
+        sse?.close()
+        sse = null
+        fallbackPoll()
+      }
+    } else {
+      fallbackPoll()
+    }
+
+    let id
+    if (!window.EventSource) {
+      id = setInterval(fallbackPoll, 5000)
+    }
+    return () => {
+      active = false
+      if (sse) sse.close()
+      if (id) clearInterval(id)
+    }
+  }, [activeTrackingOrderId])
 
   const submitAppointment = async (e) => {
     e.preventDefault()
@@ -584,21 +1225,126 @@ export default function App() {
     setUser(null)
   }
 
+  const driverPanel = (
+    <div className="tracking-card">
+      <div className="driver-grid">
+        <input placeholder="Order ID" value={driverForm.order_id} onChange={(e) => setDriverForm({ ...driverForm, order_id: normalizeOrderId(e.target.value) })} />
+        <input placeholder="Tracking Token (opsional)" value={trackingToken} onChange={(e) => setTrackingToken(e.target.value.trim())} />
+        <input placeholder="Driver ID" value={driverForm.driver_id} onChange={(e) => setDriverForm({ ...driverForm, driver_id: e.target.value })} />
+        <select value={driverForm.status} onChange={(e) => setDriverForm({ ...driverForm, status: e.target.value })}>
+          <option value="ON_ROUTE">On route</option>
+          <option value="PICKED_UP">Picked up</option>
+          <option value="ARRIVED">Arrived</option>
+          <option value="DELIVERED">Delivered</option>
+        </select>
+        <input placeholder="Driver Token (opsional)" value={driverToken} onChange={(e) => setDriverToken(e.target.value)} />
+        <input placeholder="Latitude" value={driverForm.lat} onChange={(e) => setDriverForm({ ...driverForm, lat: e.target.value })} />
+        <input placeholder="Longitude" value={driverForm.lng} onChange={(e) => setDriverForm({ ...driverForm, lng: e.target.value })} />
+        <input placeholder="Speed (km/j)" value={driverForm.speed_kph} onChange={(e) => setDriverForm({ ...driverForm, speed_kph: e.target.value })} />
+        <input placeholder="Heading" value={driverForm.heading} onChange={(e) => setDriverForm({ ...driverForm, heading: e.target.value })} />
+      </div>
+      <div className="row">
+        <button className="btn ghost" type="button" onClick={handleDriverUseLocation}>Gunakan lokasi driver</button>
+        <button
+          className="btn outline"
+          type="button"
+          onClick={() => sendDriverUpdate({
+            order_id: driverForm.order_id,
+            driver_id: driverForm.driver_id || 'DRV-LOCAL',
+            status: driverForm.status || 'ON_ROUTE',
+            lat: Number(driverForm.lat || 0),
+            lng: Number(driverForm.lng || 0),
+            speed_kph: Number(driverForm.speed_kph || 0),
+            heading: Number(driverForm.heading || 0)
+          })}
+        >
+          Kirim Update
+        </button>
+        <button className="btn primary" type="button" onClick={driverLive ? stopDriverLive : startDriverLive}>
+          {driverLive ? 'Stop Live' : 'Live Tracking'}
+        </button>
+      </div>
+      {driverStatus && <small>{driverStatus}</small>}
+    </div>
+  )
+
+  if (viewMode === 'driver') {
+    return (
+      <div className="driver-page">
+        <header className="driver-header">
+          <div>
+            <strong>Driver Mode</strong>
+            <p>Update lokasi pengiriman secara realtime.</p>
+          </div>
+          <a className="btn outline" href="/">Kembali ke app</a>
+        </header>
+        <section className="driver-content">
+          {driverPanel}
+          {trackingShareUrl && (
+            <div className="tracking-card">
+              <strong>Bagikan tracking</strong>
+              <div className={`tracking-share ${autoCopyPulse ? 'pulse' : ''}`}>
+                <input readOnly value={trackingShareUrl} />
+                <div className="row">
+                  <button className="btn outline" type="button" onClick={handleCopyTrackingLink}>Copy link</button>
+                  <a className="btn ghost" href={trackingShareUrl} target="_blank" rel="noreferrer">Buka</a>
+                  {trackingWhatsappUrl && (
+                    <a className="btn ghost" href={trackingWhatsappUrl} target="_blank" rel="noreferrer">WhatsApp</a>
+                  )}
+                  <label className="mute-toggle">
+                    <input
+                      type="checkbox"
+                      checked={muteBeep}
+                      onChange={(e) => setMuteBeep(e.target.checked)}
+                    />
+                    <span>Mute beep</span>
+                  </label>
+                </div>
+                {trackingQrData && (
+                  <img className="tracking-qr" src={trackingQrData} alt="QR tracking" />
+                )}
+                {shareStatus && <small>{shareStatus}</small>}
+              </div>
+            </div>
+          )}
+        </section>
+      </div>
+    )
+  }
+
   return (
     <div className="page">
       <header className="topbar">
-        <div className="brand">Petshop Bento</div>
+        <div className="topbar-left">
+          <div className="brand">Petshop Bento</div>
+          <div className="appbar-meta">
+            <div className="meta-chip">
+              <span className="status-dot" aria-hidden="true" />
+              <div>
+                <small>Lokasi</small>
+                <strong>Indonesia • {geoLocality || 'Lokasi Anda'} • {zoneLabel}</strong>
+              </div>
+            </div>
+            <div className="meta-chip">
+              <small>Waktu lokal</small>
+              <strong>{nowText || 'Memuat waktu...'}</strong>
+            </div>
+          </div>
+        </div>
         <nav className="topnav">
-          <a href="#produk">Produk</a>
+          <a href="#home">Home</a>
+          <a href="#quick">Menu Utama</a>
+          <a href="#feed">Feed</a>
           <a href="#layanan">Layanan</a>
           <a href="#booking">Booking</a>
-          <a href="#delivery">Delivery</a>
-          <a href="#member">Member</a>
-          <a href="#dokter">Dokter</a>
+          <a href="#member">Profile</a>
         </nav>
         <div className="top-actions">
           <a className="pill" href="https://wa.me/6289643852920" target="_blank" rel="noreferrer">Chat WhatsApp</a>
-          <button className="pill ghost" onClick={() => setCartOpen(true)}>Keranjang ({cartItems.length})</button>
+          <button className="icon-btn" onClick={() => setCartOpen(true)} aria-label="Buka keranjang">
+            <span className="icon">{ICONS.cart}</span>
+            <span className="badge-count">{cartItems.length}</span>
+          </button>
         </div>
       </header>
 
@@ -662,17 +1408,30 @@ export default function App() {
         </div>
       )}
 
-      <section className="hero">
+      <section id="home" className="hero">
         <div className="hero-left">
-          <p className="eyebrow">Petshop khusus kucing - Cikande</p>
-          <h1>Belanja kebutuhan kucing, booking dokter, semua rapi dalam satu tempat.</h1>
+          <div className="hero-badges">
+            <span className="badge accent">Super App Petcare</span>
+            <span className="badge ghost">Bento Grid UI</span>
+          </div>
+          <h1>Belanja kebutuhan kucing, booking dokter, semua rapi dalam satu aplikasi.</h1>
           <p className="lead">
             Produk lengkap, layanan grooming dan penitipan, konsultasi gratis, plus pembayaran Midtrans.
-            Desain pengalaman belanja yang terasa hangat dan percaya diri.
+            Interface dibuat mobile-first, thumb-friendly, dan content-rich.
           </p>
           <div className="cta-row">
-            <a className="btn primary" href="#produk">Belanja Sekarang</a>
+            <a className="btn primary" href="#feed">Belanja Sekarang</a>
             <a className="btn outline" href="#booking">Booking Layanan</a>
+          </div>
+          <div className="flash-card">
+            <div>
+              <strong>Flash Sale Hari Ini</strong>
+              <p>Potongan ekstra + cashback, berlaku sampai malam.</p>
+            </div>
+            <div className="countdown">
+              <span>{flashCountdown}</span>
+              <small>berakhir {zoneLabel}</small>
+            </div>
           </div>
           <div className="meta-row">
             <div>
@@ -690,15 +1449,39 @@ export default function App() {
           </div>
         </div>
         <div className="hero-right">
-          <div className="hero-card">
-            <h3>Promo Minggu Ini</h3>
-            <p>Diskon member + cashback otomatis saat checkout.</p>
-            <div className="promo-grid">
-              {promoTiles.map(tile => (
-                <div className="promo" key={tile.title}>
-                  <strong>{tile.title}</strong>
-                  <span>{tile.desc}</span>
+          <div
+            className="carousel-card"
+            ref={carouselRef}
+            onMouseEnter={() => setCarouselPaused(true)}
+            onMouseLeave={() => setCarouselPaused(false)}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+            onFocus={() => setCarouselPaused(true)}
+            onBlur={() => setCarouselPaused(false)}
+            tabIndex={0}
+          >
+            <div className="carousel">
+              {promoSlides.map((slide, idx) => (
+                <div className={`slide ${idx === carouselIndex ? 'active' : ''}`} key={slide.title}>
+                  <div className="slide-content">
+                    <span className="pill tiny">{slide.badge}</span>
+                    <h3>{slide.title}</h3>
+                    <p>{slide.desc}</p>
+                    <div className="slide-tags">
+                      {slide.tags.map(tag => <span key={tag}>{tag}</span>)}
+                    </div>
+                  </div>
                 </div>
+              ))}
+            </div>
+            <div className="carousel-dots" role="tablist" aria-label="Promo carousel">
+              {promoSlides.map((slide, idx) => (
+                <button
+                  key={slide.title}
+                  className={`dot ${idx === carouselIndex ? 'active' : ''}`}
+                  onClick={() => setCarouselIndex(idx)}
+                  aria-label={`Promo ${idx + 1}`}
+                />
               ))}
             </div>
           </div>
@@ -714,6 +1497,52 @@ export default function App() {
         </div>
       </section>
 
+      <section id="quick" className="quick-section">
+        <div className="section-head">
+          <div>
+            <h2>Menu Utama</h2>
+            <p>Akses cepat ke layanan, promo, dan kebutuhan harian.</p>
+          </div>
+          <div className="badge">Thumb-friendly</div>
+        </div>
+        <div className="quick-grid">
+          {quickAccess.map((item) => (
+            <a className="quick-item" href={item.href} key={item.label}>
+              <div className="quick-icon">{item.icon}</div>
+              <span>{item.label}</span>
+              {item.badge ? <em>{item.badge}</em> : null}
+            </a>
+          ))}
+        </div>
+      </section>
+
+      <section id="rekomendasi" className="section">
+        <div className="section-head">
+          <div>
+            <h2>Rekomendasi Untukmu</h2>
+            <p>Dipilih dari aktivitas belanja terbaru.</p>
+          </div>
+          <div className="badge">Personalized</div>
+        </div>
+        <div className="reco-grid">
+          {(recommendations.length ? recommendations : demoProducts).slice(0, 6).map((p) => (
+            <div className="product-card reco-card" key={p.id || p.name} onClick={() => handleProductOpen(p)}>
+              {p.image_url && <img className="product-img" src={`${CORE_API}${p.image_url}`} alt={p.name} />}
+              <div className="product-top">
+                <span className="cat-pill">{p.category || 'Rekomendasi'}</span>
+                <span className="stock">Stok {p.stock ?? '-'}</span>
+              </div>
+              <h3>{p.name}</h3>
+              <p>{p.description}</p>
+              <div className="price-row">
+                <strong>{rupiah(p.price)}</strong>
+                <button className="btn mini" onClick={(e) => { e.stopPropagation(); addToCart(p) }}>Tambah</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
       <section className="strip">
         {valueProps.map((v) => (
           <div className="strip-item" key={v.title}>
@@ -723,7 +1552,7 @@ export default function App() {
         ))}
       </section>
 
-      <section id="produk" className="section">
+      <section id="feed" className="section">
         <div className="section-head">
           <div>
             <h2>Produk Favorit</h2>
@@ -746,7 +1575,7 @@ export default function App() {
         </div>
         <div className="product-grid">
           {filteredProducts.map(p => (
-            <div className="product-card" key={p.id || p.name} onClick={() => setSelectedProduct(p)}>
+            <div className="product-card" key={p.id || p.name} onClick={() => handleProductOpen(p)}>
               {p.image_url && <img className="product-img" src={`${CORE_API}${p.image_url}`} alt={p.name} />}
               <div className="product-top">
                 <span className="cat-pill">{p.category || 'Kebutuhan Kucing'}</span>
@@ -791,6 +1620,19 @@ export default function App() {
                 <>
                   <input placeholder="Latitude" value={deliveryInput.lat} onChange={(e) => setDeliveryInput({ ...deliveryInput, lat: e.target.value })} />
                   <input placeholder="Longitude" value={deliveryInput.lng} onChange={(e) => setDeliveryInput({ ...deliveryInput, lng: e.target.value })} />
+                  <div className="row">
+                    <button type="button" className="btn ghost" onClick={handleUseLocation}>
+                      Gunakan Lokasi Saya
+                    </button>
+                    <span className="geo-status">{geoStatus}</span>
+                  </div>
+                  {(geoAddress || (geoCoords.lat && geoCoords.lng)) && (
+                    <div className="geo-preview">
+                      <strong>Lokasi terdeteksi</strong>
+                      {geoAddress && <p>{geoAddress}</p>}
+                      <small>{geoCoords.lat}, {geoCoords.lng}</small>
+                    </div>
+                  )}
                 </>
               )}
               {deliveryType === 'per_km' && (
@@ -859,6 +1701,30 @@ export default function App() {
                   </div>
                 )}
                 {paymentStatus && <p>Status pembayaran: {paymentStatus.transaction_status || paymentStatus.status_message || 'unknown'}</p>}
+                {trackingShareUrl && (
+                  <div className={`tracking-share compact ${autoCopyPulse ? 'pulse' : ''}`}>
+                    <input readOnly value={trackingShareUrl} />
+                    <div className="row">
+                      <button className="btn outline" type="button" onClick={handleCopyTrackingLink}>Copy link</button>
+                      <a className="btn ghost" href={trackingShareUrl} target="_blank" rel="noreferrer">Buka</a>
+                      {trackingWhatsappUrl && (
+                        <a className="btn ghost" href={trackingWhatsappUrl} target="_blank" rel="noreferrer">WhatsApp</a>
+                      )}
+                      <label className="mute-toggle">
+                        <input
+                          type="checkbox"
+                          checked={muteBeep}
+                          onChange={(e) => setMuteBeep(e.target.checked)}
+                        />
+                        <span>Mute beep</span>
+                      </label>
+                    </div>
+                    {trackingQrData && (
+                      <img className="tracking-qr" src={trackingQrData} alt="QR tracking" />
+                    )}
+                    {shareStatus && <small>{shareStatus}</small>}
+                  </div>
+                )}
               </div>
             ) : (
               <p>Belum ada order.</p>
@@ -866,6 +1732,208 @@ export default function App() {
           </div>
         </div>
       </section>
+
+      <section id="track-input" className="section">
+        <div className="section-head">
+          <div>
+            <h2>Lacak Pesanan</h2>
+            <p>Masukkan Order ID untuk melihat posisi kurir.</p>
+          </div>
+          <div className="badge">Tracking live</div>
+        </div>
+        <div className="tracking-card">
+          <div className="row">
+            <input
+              ref={trackInputRef}
+              placeholder="Order ID (UUID)"
+              value={trackingOrderId}
+              onChange={(e) => {
+                const value = normalizeOrderId(e.target.value)
+                setTrackingOrderId(value)
+                if (!value) {
+                  setTrackingError('')
+                } else if (!isUUID(value)) {
+                  setTrackingError('Format Order ID tidak valid.')
+                } else {
+                  setTrackingError('')
+                }
+              }}
+            />
+            <button className="btn outline" type="button" onClick={handleTrackLookup}>Lacak</button>
+          </div>
+          <div className="row">
+            <input
+              placeholder="Tracking Token (opsional)"
+              value={trackingToken}
+              onChange={(e) => setTrackingToken(e.target.value.trim())}
+            />
+          </div>
+          <div className="tracking-hint">
+            <small className={`hint ${trackingError ? 'error' : trackingOrderId ? 'ok' : ''}`}>
+              {trackingError
+                ? trackingError
+                : trackingOrderId
+                  ? 'Order ID valid, siap dilacak.'
+                  : 'Format UUID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'}
+            </small>
+            {trackingOrderId && (
+              <button
+                className="btn ghost mini"
+                type="button"
+                onClick={() => {
+                  if (!trackingOrderId) return
+                  navigator.clipboard.writeText(trackingOrderId).then(() => {
+                    showToast('Order ID disalin', 'success')
+                  }).catch(() => {
+                    showToast('Gagal menyalin Order ID', 'error')
+                  })
+                }}
+              >
+                Salin Order ID
+              </button>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {showQrOverlay && trackingQrData && (
+        <div className="modal-overlay" onClick={() => setShowQrOverlay(false)}>
+          <div className="modal qr-modal" onClick={(e) => e.stopPropagation()}>
+            <button className="modal-close" onClick={() => setShowQrOverlay(false)}>Tutup</button>
+            <img className="tracking-qr xl" src={trackingQrData} alt="QR tracking fullscreen" />
+            <small>Scan QR untuk buka tracking.</small>
+          </div>
+        </div>
+      )}
+
+      {toasts.length > 0 && (
+        <div className="toast-stack">
+          {toasts.map((toast) => (
+            <button
+              key={toast.id}
+              className={`toast ${toast.type}`}
+              type="button"
+              onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
+            >
+              {toast.message}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {activeTrackingOrderId && (
+        <section id="tracking" className="section alt">
+          <div className="section-head">
+            <div>
+              <h2>Tracking Pengiriman</h2>
+              <p>Update lokasi driver real-time untuk kurir internal.</p>
+            </div>
+            <div className={`badge ${trackingStatus.includes('Stream') || trackingStatus.includes('realtime') ? 'live' : 'offline'}`}>
+              {trackingError || trackingStatus || 'Menyiapkan tracking'}
+            </div>
+          </div>
+          <div className="tracking-grid">
+            <div className="tracking-card">
+              <div className="tracking-row">
+                <div>
+                  <strong>Status</strong>
+                  <p>{trackingInfo?.status || 'Menunggu driver'}</p>
+                </div>
+                <div>
+                  <strong>Update terakhir</strong>
+                  <p>{trackingUpdatedText || 'Belum ada update'} {trackingAge ? `(${trackingAge} lalu)` : ''}</p>
+                </div>
+              </div>
+              <div className="tracking-row">
+                <div>
+                  <strong>Koordinat</strong>
+                  <p>{trackingInfo ? `${trackingInfo.lat}, ${trackingInfo.lng}` : 'Belum tersedia'}</p>
+                </div>
+                <div>
+                  <strong>Kecepatan</strong>
+                  <p>{trackingInfo && trackingInfo.speed_kph !== undefined ? `${trackingInfo.speed_kph} km/j` : '-'}</p>
+                </div>
+              </div>
+              {trackingInfo?.driver_id && (
+                <div className="tracking-driver">
+                  <span className="tag">Driver</span>
+                  <strong>{trackingInfo.driver_id}</strong>
+                </div>
+              )}
+              {trackingTrail.length > 0 && (
+                <div className="tracking-trail">
+                  <strong>Jejak terakhir</strong>
+                  <ul>
+                    {trackingTrail.slice(0, 4).map((t) => (
+                      <li key={t.id || `${t.lat}-${t.lng}-${t.created_at}`}>
+                        {t.lat}, {t.lng} - {formatIndonesiaTime(new Date(t.created_at), timeZone)} {zoneLabel}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+            <div className="tracking-card map">
+              {trackingMapUrl ? (
+                <img src={trackingMapUrl} alt="Peta lokasi driver" />
+              ) : (
+                <div className="map-placeholder">
+                  <strong>Peta tracking</strong>
+                  <p>Masukkan API key Google Maps untuk tampilan peta detail.</p>
+                </div>
+              )}
+            </div>
+          </div>
+          {trackingShareUrl && (
+            <div className={`tracking-share ${autoCopyPulse ? 'pulse' : ''}`}>
+              <input readOnly value={trackingShareUrl} />
+              <div className="row">
+                <button className="btn outline" type="button" onClick={handleCopyTrackingLink}>Copy link</button>
+                <a className="btn ghost" href={trackingShareUrl} target="_blank" rel="noreferrer">Buka</a>
+                {trackingWhatsappUrl && (
+                  <a className="btn ghost" href={trackingWhatsappUrl} target="_blank" rel="noreferrer">WhatsApp</a>
+                )}
+                <label className="mute-toggle">
+                  <input
+                    type="checkbox"
+                    checked={muteBeep}
+                    onChange={(e) => setMuteBeep(e.target.checked)}
+                  />
+                  <span>Mute beep</span>
+                </label>
+              </div>
+              {trackingQrData && (
+                <img className="tracking-qr" src={trackingQrData} alt="QR tracking" />
+              )}
+              {shareStatus && <small>{shareStatus}</small>}
+            </div>
+          )}
+          {trackingQrData && (
+            <div className="tracking-card qr">
+              <strong>QR Tracking</strong>
+              <img className="tracking-qr large" src={trackingQrData} alt="QR tracking besar" />
+              <div className="row">
+                <button className="btn outline" type="button" onClick={() => setShowQrOverlay(true)}>Scan fullscreen</button>
+                <small>Scan untuk membuka halaman tracking.</small>
+              </div>
+            </div>
+          )}
+          <div className="tracking-driver-panel">
+            <div className="driver-toggle">
+              <div>
+                <strong>Driver Mode</strong>
+                <p>Untuk kurir internal mengirim lokasi ke sistem.</p>
+              </div>
+              <button className="btn outline" type="button" onClick={() => setDriverMode(!driverMode)}>
+                {driverMode ? 'Sembunyikan' : 'Tampilkan'}
+              </button>
+            </div>
+            {driverMode && (
+              driverPanel
+            )}
+          </div>
+        </section>
+      )}
 
       <section id="layanan" className="section alt">
         <div className="section-head">
@@ -875,11 +1943,15 @@ export default function App() {
           </div>
           <div className="badge">Konsultasi gratis</div>
         </div>
-        <div className="service-grid">
-          {services.map(s => (
-            <div className="service-card" key={s.title}>
-              <h3>{s.title}</h3>
-              <p>{s.desc}</p>
+        <div className="bento-grid">
+          {bentoTiles.map(tile => (
+            <div className={`bento-card ${tile.area}`} key={tile.title}>
+              <div className="bento-header">
+                <span className="bento-icon">{tile.icon}</span>
+                <span className="tag">{tile.tag}</span>
+              </div>
+              <h3>{tile.title}</h3>
+              <p>{tile.desc}</p>
             </div>
           ))}
         </div>
@@ -1207,6 +2279,30 @@ export default function App() {
         </div>
       </section>
 
+      <nav className="bottom-nav" aria-label="Navigasi utama">
+        <a className="nav-item" href="#home">
+          <span className="nav-icon">{ICONS.home}</span>
+          <span>Home</span>
+        </a>
+        <a className="nav-item" href="#quick">
+          <span className="nav-icon">{ICONS.menu}</span>
+          <span>Menu</span>
+        </a>
+        <a className="nav-item" href="#feed">
+          <span className="nav-icon">{ICONS.feed}</span>
+          <span>Feed</span>
+        </a>
+        <button className="nav-item" onClick={() => setCartOpen(true)} type="button">
+          <span className="nav-icon">{ICONS.cart}</span>
+          <span>Cart</span>
+          {cartItems.length > 0 && <em className="nav-badge">{cartItems.length}</em>}
+        </button>
+        <a className="nav-item" href="#member">
+          <span className="nav-icon">{ICONS.profile}</span>
+          <span>Profile</span>
+        </a>
+      </nav>
+
       <footer className="footer">
         <div>
           <strong>Petshop Bento</strong>
@@ -1221,30 +2317,131 @@ export default function App() {
   )
 }
 
+const ICONS = {
+  home: (
+    <svg className="icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M3 11.5L12 4l9 7.5" />
+      <path d="M5 10.5V20h14v-9.5" />
+    </svg>
+  ),
+  menu: (
+    <svg className="icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="3" y="3" width="7" height="7" rx="2" />
+      <rect x="14" y="3" width="7" height="7" rx="2" />
+      <rect x="3" y="14" width="7" height="7" rx="2" />
+      <rect x="14" y="14" width="7" height="7" rx="2" />
+    </svg>
+  ),
+  feed: (
+    <svg className="icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 5h16" />
+      <path d="M4 12h16" />
+      <path d="M4 19h10" />
+    </svg>
+  ),
+  cart: (
+    <svg className="icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M3 4h2l2.2 9.5a2 2 0 0 0 2 1.5h8.8a2 2 0 0 0 2-1.5L21 7H7.2" />
+      <path d="M9 20a1 1 0 1 0 0.01 0" />
+      <path d="M18 20a1 1 0 1 0 0.01 0" />
+    </svg>
+  ),
+  profile: (
+    <svg className="icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 20c2.5-4 13.5-4 16 0" />
+    </svg>
+  ),
+  shop: (
+    <svg className="icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 9h16l-1.2 10H5.2L4 9z" />
+      <path d="M7 9l1-4h8l1 4" />
+    </svg>
+  ),
+  doctor: (
+    <svg className="icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="8" r="4" />
+      <path d="M8 21v-4h8v4" />
+      <path d="M11 12h2" />
+      <path d="M12 11v3" />
+    </svg>
+  ),
+  grooming: (
+    <svg className="icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M5 6h14" />
+      <path d="M8 6v12" />
+      <path d="M16 6v12" />
+      <path d="M5 18h14" />
+    </svg>
+  ),
+  delivery: (
+    <svg className="icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M3 7h12v8H3z" />
+      <path d="M15 9h4l2 2v4h-6z" />
+      <circle cx="7" cy="18" r="2" />
+      <circle cx="18" cy="18" r="2" />
+    </svg>
+  ),
+  voucher: (
+    <svg className="icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 7h16v4a2 2 0 0 0 0 4v4H4v-4a2 2 0 0 0 0-4V7z" />
+      <path d="M9 7v10" />
+    </svg>
+  ),
+  member: (
+    <svg className="icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 3l2.5 4.5 5 .7-3.6 3.5.9 5-4.8-2.6-4.8 2.6.9-5L4.5 8.2l5-.7L12 3z" />
+    </svg>
+  )
+}
+
 const demoProducts = [
   { name: 'Whiskas Adult 1.2kg', description: 'Rasa tuna, kaya nutrisi', price: 68000, stock: 25, category: 'Makanan' },
   { name: 'Vitamin Bulu Halus', description: 'Vitamin kulit dan bulu kucing', price: 42000, stock: 30, category: 'Vitamin' },
   { name: 'Pasir Kucing 10L', description: 'Aroma lembut, daya serap tinggi', price: 55000, stock: 18, category: 'Pasir' }
 ]
 
-const services = [
-  { title: 'Grooming dan Mandi', desc: 'Paket mandi, potong kuku, pembersihan telinga.' },
-  { title: 'Penitipan Kucing', desc: 'Kamar bersih, monitoring harian, update foto.' },
-  { title: 'Konsultasi Gratis', desc: 'Tanya kesehatan, nutrisi, dan perawatan.' },
-  { title: 'Vaksin dan Suntik', desc: 'Layanan dokter hewan berjadwal.' },
-  { title: 'Perlengkapan Lengkap', desc: 'Kandang, tas, pasir, mainan, aksesoris.' },
-  { title: 'Delivery', desc: 'Pengiriman cepat untuk semua produk.' }
-]
-
 const demoSchedules = [
   { doctor_name: 'Drh. Sinta', day_of_week: 'Senin', start_time: '09:00', end_time: '16:00', location: 'Petshop Bento - Cikande' }
 ]
 
-const promoTiles = [
-  { title: 'Voucher Welcome', desc: 'Diskon member baru langsung aktif.' },
-  { title: 'Cashback Instan', desc: 'Saldo otomatis masuk ke wallet.' },
-  { title: 'Delivery Fleksibel', desc: 'Zone, per km, atau eksternal.' },
-  { title: 'Dokter Berjadwal', desc: 'Booking tanpa antri.' }
+const promoSlides = [
+  {
+    badge: 'Promo Spesial',
+    title: 'Voucher Welcome + Cashback',
+    desc: 'Member baru langsung dapat voucher dan cashback otomatis.',
+    tags: ['Voucher 20K', 'Cashback 5%', 'Tanpa minimum']
+  },
+  {
+    badge: 'Super App',
+    title: 'Produk + Booking dalam 1 app',
+    desc: 'Belanja kebutuhan kucing dan booking dokter tanpa pindah aplikasi.',
+    tags: ['Belanja', 'Dokter', 'Grooming']
+  },
+  {
+    badge: 'Delivery',
+    title: 'Pengiriman Fleksibel',
+    desc: 'Pilih tarif zona, per KM, atau kurir eksternal favoritmu.',
+    tags: ['GoSend', 'GrabExpress', 'Kurir lokal']
+  }
+]
+
+const quickAccess = [
+  { label: 'Belanja', href: '#feed', icon: ICONS.shop, badge: 'Promo' },
+  { label: 'Dokter', href: '#dokter', icon: ICONS.doctor },
+  { label: 'Grooming', href: '#booking', icon: ICONS.grooming },
+  { label: 'Delivery', href: '#delivery', icon: ICONS.delivery },
+  { label: 'Voucher', href: '#member', icon: ICONS.voucher },
+  { label: 'Member', href: '#member', icon: ICONS.member }
+]
+
+const bentoTiles = [
+  { title: 'Grooming & Spa', desc: 'Mandi, potong kuku, perawatan bulu.', tag: 'Terlaris', icon: ICONS.grooming, area: 'span-2' },
+  { title: 'Penitipan Harian', desc: 'Kamar bersih, update foto harian.', tag: 'Aman', icon: ICONS.member, area: 'tall' },
+  { title: 'Dokter & Vaksin', desc: 'Jadwal dokter lengkap dan terencana.', tag: 'Berjadwal', icon: ICONS.doctor, area: 'wide' },
+  { title: 'Produk Premium', desc: 'Makanan, pasir, vitamin terkurasi.', tag: 'Best pick', icon: ICONS.shop, area: 'wide' },
+  { title: 'Delivery Express', desc: 'Same-day untuk area lokal Cikande.', tag: 'Cepat', icon: ICONS.delivery, area: 'span-2' },
+  { title: 'Member & Reward', desc: 'Leveling, cashback, voucher rutin.', tag: 'Gamified', icon: ICONS.member, area: 'wide' }
 ]
 
 const valueProps = [
@@ -1253,3 +2450,24 @@ const valueProps = [
   { title: 'Member Friendly', desc: 'Diskon, cashback, voucher.' },
   { title: 'Pembayaran Aman', desc: 'Midtrans siap semua metode.' }
 ]
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('mute_beep', String(muteBeep))
+    }
+  }, [muteBeep])
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('driver_mode', String(driverMode))
+    }
+  }, [driverMode])
+
+  const showToast = (message, type = 'info') => {
+    const id = Date.now() + Math.random()
+    const duration = type === 'error' ? 3000 : 2000
+    setToasts((prev) => [...prev, { id, message, type }].slice(-3))
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id))
+    }, duration)
+  }
