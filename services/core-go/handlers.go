@@ -116,8 +116,21 @@ func cartItemHandler(db *sql.DB) http.HandlerFunc {
       }
     }
 
-    _, err := db.Exec(`INSERT INTO cart_items (cart_id, product_id, qty) VALUES ($1, $2, $3)`, cartID, req.ProductID, req.Qty)
-    if err != nil {
+    var existingID string
+    err := db.QueryRow(`SELECT id FROM cart_items WHERE cart_id = $1 AND product_id = $2`, cartID, req.ProductID).Scan(&existingID)
+    if err == nil {
+      _, err = db.Exec(`UPDATE cart_items SET qty = qty + $1 WHERE id = $2`, req.Qty, existingID)
+      if err != nil {
+        writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
+        return
+      }
+    } else if err == sql.ErrNoRows {
+      _, err = db.Exec(`INSERT INTO cart_items (cart_id, product_id, qty) VALUES ($1, $2, $3)`, cartID, req.ProductID, req.Qty)
+      if err != nil {
+        writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
+        return
+      }
+    } else {
       writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
       return
     }
@@ -172,6 +185,13 @@ func orderHandler(db *sql.DB) http.HandlerFunc {
       return
     }
 
+    tx, err := db.Begin()
+    if err != nil {
+      writeJSON(w, http.StatusInternalServerError, errMsg("db error"))
+      return
+    }
+    defer tx.Rollback()
+
     token := r.Header.Get("X-Auth-Token")
     userID := ""
     currentTier := "Bronze"
@@ -179,27 +199,27 @@ func orderHandler(db *sql.DB) http.HandlerFunc {
     walletBalance := 0
     tierInfo := TierInfo{Name: "Bronze", DiscountPct: 0, CashbackPct: 0}
     if token != "" {
-      uid, err := getUserIDFromToken(db, r)
+      uid, err := getUserIDFromTokenTx(tx, r)
       if err != nil {
         writeJSON(w, http.StatusUnauthorized, errMsg("invalid session"))
         return
       }
       userID = uid
-      _ = db.QueryRow(`SELECT total_spend, tier, wallet_balance FROM users WHERE id = $1`, userID).Scan(&totalSpend, &currentTier, &walletBalance)
+      _ = tx.QueryRow(`SELECT total_spend, tier, wallet_balance FROM users WHERE id = $1`, userID).Scan(&totalSpend, &currentTier, &walletBalance)
       if t, err := getTierInfo(db, totalSpend); err == nil {
         tierInfo = t
       }
     }
 
     var subtotal int
-    err := db.QueryRow(`SELECT COALESCE(SUM(p.price * ci.qty), 0) FROM cart_items ci JOIN products p ON ci.product_id = p.id WHERE ci.cart_id = $1`, req.CartID).Scan(&subtotal)
+    err = tx.QueryRow(`SELECT COALESCE(SUM(p.price * ci.qty), 0) FROM cart_items ci JOIN products p ON ci.product_id = p.id WHERE ci.cart_id = $1`, req.CartID).Scan(&subtotal)
     if err != nil {
       writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
       return
     }
     discount := subtotal * tierInfo.DiscountPct / 100
 
-    voucherDiscount, err := applyVoucher(db, req.VoucherCode, subtotal, userID)
+    voucherDiscount, err := applyVoucherTx(tx, req.VoucherCode, subtotal, userID)
     if err != nil {
       if isInvalid(err) {
         writeJSON(w, http.StatusBadRequest, errMsg(err.Error()))
@@ -227,28 +247,74 @@ func orderHandler(db *sql.DB) http.HandlerFunc {
     }
 
     var orderID string
-    err = db.QueryRow(`INSERT INTO orders (cart_id, user_id, customer_name, phone, address, shipping_fee, subtotal, discount, voucher_code, cashback, wallet_used, total) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
+    err = tx.QueryRow(`INSERT INTO orders (cart_id, user_id, customer_name, phone, address, shipping_fee, subtotal, discount, voucher_code, cashback, wallet_used, total) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
       req.CartID, nullIfEmpty(userID), req.CustomerName, req.Phone, req.Address, req.ShippingFee, subtotal, discount+voucherDiscount, nullIfEmpty(req.VoucherCode), cashback, walletUsed, total).
       Scan(&orderID)
     if err != nil {
       writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
       return
     }
+
+    if strings.TrimSpace(req.VoucherCode) != "" {
+      _, _ = tx.Exec(`UPDATE vouchers SET uses = uses + 1 WHERE code = $1`, strings.ToUpper(req.VoucherCode))
+      if userID != "" {
+        _, _ = tx.Exec(`UPDATE user_vouchers SET used = TRUE WHERE user_id = $1 AND code = $2`, userID, strings.ToUpper(req.VoucherCode))
+      }
+    }
+
+    items, err := tx.Query(`SELECT p.id, p.stock, ci.qty FROM cart_items ci JOIN products p ON ci.product_id = p.id WHERE ci.cart_id = $1 FOR UPDATE`, req.CartID)
+    if err != nil {
+      writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
+      return
+    }
+    defer items.Close()
+    type stockItem struct {
+      id  string
+      qty int
+      stk int
+    }
+    batch := []stockItem{}
+    for items.Next() {
+      var pid string
+      var stock, qty int
+      if err := items.Scan(&pid, &stock, &qty); err != nil {
+        writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
+        return
+      }
+      if stock < qty {
+        writeJSON(w, http.StatusBadRequest, errMsg("stock not enough"))
+        return
+      }
+      batch = append(batch, stockItem{id: pid, qty: qty, stk: stock})
+    }
+    for _, it := range batch {
+      _, err = tx.Exec(`UPDATE products SET stock = stock - $1 WHERE id = $2`, it.qty, it.id)
+      if err != nil {
+        writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
+        return
+      }
+    }
+
     responseTier := tierInfo.Name
     if userID != "" {
-      newTotal := totalSpend + total
+      grossTotal := total + walletUsed
+      newTotal := totalSpend + grossTotal
       newTier := currentTier
       if t, err := getTierInfo(db, newTotal); err == nil {
         newTier = t.Name
       }
-      _, _ = db.Exec(`UPDATE users SET total_spend = $1, tier = $2, wallet_balance = wallet_balance + $3 - $4 WHERE id = $5`, newTotal, newTier, cashback, walletUsed, userID)
+      _, _ = tx.Exec(`UPDATE users SET total_spend = $1, tier = $2, wallet_balance = wallet_balance + $3 - $4 WHERE id = $5`, newTotal, newTier, cashback, walletUsed, userID)
       if newTier != currentTier {
         code := rewardCodeForTier(newTier)
         if code != "" {
-          _, _ = db.Exec(`INSERT INTO user_vouchers (user_id, code) VALUES ($1,$2)`, userID, code)
+          _, _ = tx.Exec(`INSERT INTO user_vouchers (user_id, code) VALUES ($1,$2)`, userID, code)
         }
       }
       responseTier = newTier
+    }
+    if err := tx.Commit(); err != nil {
+      writeJSON(w, http.StatusInternalServerError, errMsg("db commit failed"))
+      return
     }
     writeJSON(w, http.StatusOK, map[string]any{
       "order_id": orderID,
@@ -265,8 +331,8 @@ func orderHandler(db *sql.DB) http.HandlerFunc {
 func withCORS(next http.Handler) http.Handler {
   return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Access-Control-Allow-Origin", "*")
-    w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-    w.Header().Set("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+    w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Auth-Token, X-Service-Secret, X-Admin-Secret")
+    w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
     if r.Method == http.MethodOptions {
       w.WriteHeader(http.StatusNoContent)
       return

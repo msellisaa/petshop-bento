@@ -21,9 +21,7 @@ Auth:
   - external provider response may include `message` when in placeholder mode
 - POST /auth/register
 - POST /auth/login
-- POST /auth/otp/request
-- POST /auth/otp/verify
-- POST /auth/google/login
+- POST /auth/logout
 - POST /admin/login
 - POST /admin/bootstrap
 - GET /admin/staff
@@ -42,6 +40,7 @@ Auth:
 - POST /admin/delivery/zones
 - GET /admin/delivery/settings
 - PUT /admin/delivery/settings
+- POST /admin/products/{id}/image (multipart form field: image)
 
 ## Booking API (Java)
 Base URL: http://localhost:8082

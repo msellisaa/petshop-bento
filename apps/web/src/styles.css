@@ -283,6 +283,14 @@ a { color: inherit; text-decoration: none; }
   gap: 10px;
 }
 
+.product-img {
+  width: 100%;
+  height: 180px;
+  object-fit: cover;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+}
+
 .product-top {
   display: flex;
   justify-content: space-between;

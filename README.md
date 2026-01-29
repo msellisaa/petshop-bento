@@ -21,6 +21,7 @@ Full-stack petshop platform for cat products, services, and vet scheduling in In
 | Rewards | Tier-based discounts, cashback wallet, vouchers, welcome voucher |
 | Payments | Midtrans Snap payment, status checking, webhook updates |
 | Delivery | Flat zone fee, per-km fee (distance), external shipping provider |
+| Media | Product image upload and display |
 | Admin | Products, schedules, appointments, bookings, members, vouchers, staff management |
 | Analytics | Member spend ranking, order list with status controls |
 
@@ -130,6 +131,7 @@ Key environment variables:
 - `MIDTRANS_SERVER_KEY`, `MIDTRANS_SNAP_URL`, `MIDTRANS_STATUS_URL`
 - `ADMIN_BOOTSTRAP_SECRET`, `CORE_WEBHOOK_SECRET`, `BOOKING_ADMIN_SECRET`
 - `EXTERNAL_SHIPPING_PROVIDER`, `EXTERNAL_SHIPPING_URL`, `EXTERNAL_SHIPPING_KEY`
+- `SESSION_TTL_HOURS`
 
 ## API Overview
 

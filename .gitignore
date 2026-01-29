@@ -16,6 +16,7 @@ apps/admin/.env
 services/core-go/*.exe
 services/core-go/*.out
 services/core-go/.env
+services/core-go/uploads/
 
 # Java/Gradle
 services/booking-java/.gradle/

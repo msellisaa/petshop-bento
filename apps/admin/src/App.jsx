@@ -19,6 +19,7 @@ export default function App() {
   const [zones, setZones] = useState([])
   const [deliverySettings, setDeliverySettings] = useState({ base_lat: -6.2216339332113595, base_lng: 106.34573045889455, per_km_rate: 3000, min_fee: 8000 })
   const [productForm, setProductForm] = useState({ name: '', price: 0, stock: 0, category: '' })
+  const [productFile, setProductFile] = useState(null)
   const [scheduleForm, setScheduleForm] = useState({ doctor_name: '', day_of_week: 'Senin', start_time: '09:00', end_time: '16:00', location: 'Petshop Bento - Cikande' })
   const [voucherForm, setVoucherForm] = useState({ code: '', title: '', discount_type: 'flat', discount_value: 0, min_spend: 0, max_uses: 0, expires_at: '', active: true })
   const [staffForm, setStaffForm] = useState({ name: '', email: '', phone: '', password: '', role: 'staff' })
@@ -44,13 +45,26 @@ export default function App() {
     if (adminToken) load()
   }, [adminToken])
 
-  const submitProduct = (e) => {
+  const submitProduct = async (e) => {
     e.preventDefault()
-    fetch(`${CORE_API}/products`, {
+    const resp = await fetch(`${CORE_API}/products`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...adminHeaders },
       body: JSON.stringify(productForm)
-    }).then(() => { setProductForm({ name: '', price: 0, stock: 0, category: '' }); load() })
+    })
+    const data = await resp.json()
+    if (data.product_id && productFile) {
+      const formData = new FormData()
+      formData.append('image', productFile)
+      await fetch(`${CORE_API}/admin/products/${data.product_id}/image`, {
+        method: 'POST',
+        headers: { ...adminHeaders },
+        body: formData
+      })
+    }
+    setProductForm({ name: '', price: 0, stock: 0, category: '' })
+    setProductFile(null)
+    load()
   }
 
   const submitSchedule = (e) => {
@@ -126,6 +140,9 @@ export default function App() {
   }
 
   const logout = () => {
+    if (adminToken) {
+      fetch(`${CORE_API}/auth/logout`, { method: 'POST', headers: { 'X-Auth-Token': adminToken } }).catch(() => {})
+    }
     localStorage.removeItem('admin_token')
     setAdminToken('')
   }
@@ -174,6 +191,7 @@ export default function App() {
                   <input placeholder="Harga" type="number" value={productForm.price} onChange={(e) => setProductForm({ ...productForm, price: Number(e.target.value) })} />
                   <input placeholder="Stok" type="number" value={productForm.stock} onChange={(e) => setProductForm({ ...productForm, stock: Number(e.target.value) })} />
                   <input placeholder="Kategori" value={productForm.category} onChange={(e) => setProductForm({ ...productForm, category: e.target.value })} />
+                  <input type="file" accept="image/*" onChange={(e) => setProductFile(e.target.files?.[0] || null)} />
                   <button className="btn" type="submit">Simpan</button>
                 </form>
               </div>
