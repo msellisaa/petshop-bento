@@ -21,6 +21,9 @@ Auth:
   - external provider response may include `message` when in placeholder mode
 - POST /auth/register
 - POST /auth/login
+- POST /auth/otp/request
+- POST /auth/otp/verify
+- POST /auth/google/login
 - POST /auth/logout
 - POST /admin/login
 - POST /admin/bootstrap
@@ -36,6 +39,8 @@ Auth:
 - GET /admin/orders
 - PUT /admin/orders/{id}/status
 - POST /webhooks/midtrans
+- POST /payments/midtrans/snap
+- GET /payments/midtrans/status/{orderId}
 - GET /admin/delivery/zones
 - POST /admin/delivery/zones
 - GET /admin/delivery/settings

@@ -19,3 +19,4 @@ core:
 
 booking:
   adminSecret: ${BOOKING_ADMIN_SECRET:}
+  requirePaymentSecret: ${BOOKING_REQUIRE_PAYMENT_SECRET:false}
