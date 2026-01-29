@@ -48,11 +48,30 @@ type AuthRegisterRequest struct {
   Email    string `json:"email"`
   Phone    string `json:"phone"`
   Password string `json:"password"`
+  OtpToken string `json:"otp_token"`
 }
 
 type AuthLoginRequest struct {
   Email    string `json:"email"`
   Password string `json:"password"`
+}
+
+type OtpRequest struct {
+  Email   string `json:"email"`
+  Purpose string `json:"purpose"`
+}
+
+type OtpVerifyRequest struct {
+  Email   string `json:"email"`
+  Purpose string `json:"purpose"`
+  Code    string `json:"code"`
+}
+
+type GoogleLoginRequest struct {
+  Email    string `json:"email"`
+  Name     string `json:"name"`
+  Phone    string `json:"phone"`
+  GoogleID string `json:"google_id"`
 }
 
 type AdminBootstrapRequest struct {
@@ -105,4 +124,20 @@ type VoucherCreateRequest struct {
   MaxUses       int    `json:"max_uses"`
   ExpiresAt     string `json:"expires_at"`
   Active        bool   `json:"active"`
+}
+
+type MidtransItem struct {
+  ID       string `json:"id"`
+  Name     string `json:"name"`
+  Price    int    `json:"price"`
+  Quantity int    `json:"quantity"`
+}
+
+type MidtransSnapRequest struct {
+  OrderID     string         `json:"order_id"`
+  GrossAmount int            `json:"gross_amount"`
+  FirstName   string         `json:"first_name"`
+  Phone       string         `json:"phone"`
+  Email       string         `json:"email"`
+  Items       []MidtransItem `json:"items"`
 }

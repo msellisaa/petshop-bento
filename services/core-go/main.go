@@ -30,6 +30,9 @@ func main() {
   mux.HandleFunc("/auth/register", registerHandler(db))
   mux.HandleFunc("/auth/login", loginHandler(db))
   mux.HandleFunc("/auth/logout", logoutHandler(db))
+  mux.HandleFunc("/auth/otp/request", otpRequestHandler(db))
+  mux.HandleFunc("/auth/otp/verify", otpVerifyHandler(db))
+  mux.HandleFunc("/auth/google/login", googleLoginHandler(db))
   mux.HandleFunc("/admin/login", adminLoginHandler(db))
   mux.HandleFunc("/admin/bootstrap", adminBootstrapHandler(db))
   mux.HandleFunc("/admin/staff", adminStaffHandler(db))
@@ -45,6 +48,8 @@ func main() {
   mux.HandleFunc("/admin/orders/", adminOrderStatusHandler(db))
   mux.HandleFunc("/admin/products/", productImageUploadHandler(db))
   mux.HandleFunc("/webhooks/midtrans", midtransWebhookHandler(db))
+  mux.HandleFunc("/payments/midtrans/snap", midtransSnapProxyHandler())
+  mux.HandleFunc("/payments/midtrans/status/", midtransStatusProxyHandler())
 
   handler := withCORS(mux)
 

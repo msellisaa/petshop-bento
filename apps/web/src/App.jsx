@@ -18,6 +18,9 @@ export default function App() {
   const [myOrders, setMyOrders] = useState([])
   const [loginForm, setLoginForm] = useState({ email: '', password: '' })
   const [registerForm, setRegisterForm] = useState({ name: '', email: '', phone: '', password: '' })
+  const [otpState, setOtpState] = useState({ code: '', token: '', message: '', sent: false, verified: false })
+  const [googleForm, setGoogleForm] = useState({ email: '', name: '', phone: '', google_id: '' })
+  const [googleStatus, setGoogleStatus] = useState('')
   const [checkout, setCheckout] = useState({ name: '', phone: '', address: '', voucher_code: '', wallet_use: 0 })
   const [deliveryType, setDeliveryType] = useState('zone')
   const [deliveryInput, setDeliveryInput] = useState({ zone_id: '', lat: '', lng: '', distance_km: '' })
@@ -89,14 +92,82 @@ export default function App() {
 
   const submitRegister = async (e) => {
     e.preventDefault()
+    if (!otpState.token) {
+      setOtpState({ ...otpState, message: 'OTP belum diverifikasi.' })
+      return
+    }
     const resp = await fetch(`${CORE_API}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(registerForm)
+      body: JSON.stringify({ ...registerForm, otp_token: otpState.token })
     })
     const data = await resp.json()
     if (data.user_id) {
       setRegisterForm({ name: '', email: '', phone: '', password: '' })
+      setOtpState({ code: '', token: '', message: 'Registrasi berhasil.', sent: false, verified: false })
+    } else if (data.error) {
+      setOtpState({ ...otpState, message: data.error })
+    }
+  }
+
+  const requestOtp = async () => {
+    if (!registerForm.email) {
+      setOtpState({ ...otpState, message: 'Email wajib diisi sebelum OTP.' })
+      return
+    }
+    const resp = await fetch(`${CORE_API}/auth/otp/request`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: registerForm.email, purpose: 'register' })
+    })
+    const data = await resp.json()
+    if (data.error) {
+      setOtpState({ ...otpState, message: data.error })
+      return
+    }
+    const message = data.otp ? `OTP dev: ${data.otp}` : 'OTP terkirim.'
+    setOtpState({ ...otpState, sent: true, verified: false, token: '', message })
+  }
+
+  const verifyOtp = async () => {
+    if (!registerForm.email || !otpState.code) {
+      setOtpState({ ...otpState, message: 'Email dan kode OTP wajib diisi.' })
+      return
+    }
+    const resp = await fetch(`${CORE_API}/auth/otp/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: registerForm.email, purpose: 'register', code: otpState.code })
+    })
+    const data = await resp.json()
+    if (data.otp_token) {
+      setOtpState({ ...otpState, token: data.otp_token, verified: true, message: 'OTP terverifikasi.' })
+    } else {
+      setOtpState({ ...otpState, message: data.error || 'OTP tidak valid.' })
+    }
+  }
+
+  const submitGoogle = async () => {
+    setGoogleStatus('')
+    const payload = {
+      email: googleForm.email,
+      name: googleForm.name,
+      phone: googleForm.phone,
+      google_id: googleForm.google_id || googleForm.email
+    }
+    const resp = await fetch(`${CORE_API}/auth/google/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    const data = await resp.json()
+    if (data.token) {
+      localStorage.setItem('auth_token', data.token)
+      setToken(data.token)
+      setUser(data.user)
+      setGoogleStatus('Login Google berhasil.')
+    } else {
+      setGoogleStatus(data.error || 'Login Google gagal.')
     }
   }
 
@@ -135,7 +206,7 @@ export default function App() {
 
   const requestMidtrans = async () => {
     if (!orderInfo) return
-    const resp = await fetch(`${BOOKING_API}/payments/midtrans/snap`, {
+    const resp = await fetch(`${CORE_API}/payments/midtrans/snap`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -153,7 +224,7 @@ export default function App() {
 
   const checkStatus = async () => {
     if (!orderInfo) return
-    const resp = await fetch(`${BOOKING_API}/payments/midtrans/status/${orderInfo.order_id}`)
+    const resp = await fetch(`${CORE_API}/payments/midtrans/status/${orderInfo.order_id}`)
     const data = await resp.json()
     setPaymentStatus(data)
   }
@@ -502,10 +573,29 @@ export default function App() {
               <h3>Daftar Member Baru</h3>
               <form className="form-grid" onSubmit={submitRegister}>
                 <input placeholder="Nama" value={registerForm.name} onChange={(e) => setRegisterForm({ ...registerForm, name: e.target.value })} />
-                <input placeholder="Email" value={registerForm.email} onChange={(e) => setRegisterForm({ ...registerForm, email: e.target.value })} />
+                <input placeholder="Email" value={registerForm.email} onChange={(e) => {
+                  const email = e.target.value
+                  setRegisterForm({ ...registerForm, email })
+                  setOtpState({ ...otpState, token: '', verified: false, sent: false, message: '' })
+                }} />
                 <input placeholder="Telepon" value={registerForm.phone} onChange={(e) => setRegisterForm({ ...registerForm, phone: e.target.value })} />
                 <input placeholder="Password" type="password" value={registerForm.password} onChange={(e) => setRegisterForm({ ...registerForm, password: e.target.value })} />
-                <button className="btn">Daftar</button>
+                <button className="btn outline" type="button" onClick={requestOtp}>Kirim OTP</button>
+                <input placeholder="Kode OTP" value={otpState.code} onChange={(e) => setOtpState({ ...otpState, code: e.target.value })} />
+                <button className="btn outline" type="button" onClick={verifyOtp}>Verifikasi OTP</button>
+                {otpState.message && <small>{otpState.message}</small>}
+                <button className="btn" disabled={!otpState.verified}>Daftar</button>
+              </form>
+            </div>
+            <div className="auth-block">
+              <h3>Google Sign-in</h3>
+              <form className="form-grid" onSubmit={(e) => { e.preventDefault(); submitGoogle() }}>
+                <input placeholder="Email Google" value={googleForm.email} onChange={(e) => setGoogleForm({ ...googleForm, email: e.target.value })} />
+                <input placeholder="Nama" value={googleForm.name} onChange={(e) => setGoogleForm({ ...googleForm, name: e.target.value })} />
+                <input placeholder="Telepon" value={googleForm.phone} onChange={(e) => setGoogleForm({ ...googleForm, phone: e.target.value })} />
+                <input placeholder="Google ID (opsional)" value={googleForm.google_id} onChange={(e) => setGoogleForm({ ...googleForm, google_id: e.target.value })} />
+                <button className="btn" type="submit">Login/Daftar dengan Google</button>
+                {googleStatus && <small>{googleStatus}</small>}
               </form>
             </div>
           </div>
