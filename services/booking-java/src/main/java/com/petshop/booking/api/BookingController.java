@@ -66,10 +66,26 @@ public class BookingController {
     return ResponseEntity.ok(Map.of("appointment_id", id));
   }
 
+  @GetMapping("/appointments")
+  public ResponseEntity<?> listAppointments(@RequestParam(value = "phone", required = false) String phone) {
+    if (phone != null && !phone.isBlank()) {
+      return ResponseEntity.ok(repo.listAppointmentsByPhone(phone));
+    }
+    return ResponseEntity.ok(repo.listAppointments());
+  }
+
   @PostMapping("/services/booking")
   public ResponseEntity<Map<String, String>> createService(@RequestBody ServiceBookingRequest req) {
     String id = repo.createServiceBooking(req);
     return ResponseEntity.ok(Map.of("booking_id", id));
+  }
+
+  @GetMapping("/services/booking")
+  public ResponseEntity<?> listServiceBookings(@RequestParam(value = "phone", required = false) String phone) {
+    if (phone != null && !phone.isBlank()) {
+      return ResponseEntity.ok(repo.listServiceBookingsByPhone(phone));
+    }
+    return ResponseEntity.ok(repo.listServiceBookings());
   }
 
   @GetMapping("/admin/appointments")

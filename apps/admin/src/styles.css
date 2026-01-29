@@ -66,6 +66,41 @@ body {
   margin-bottom: 16px;
 }
 
+.chart {
+  display: grid;
+  grid-auto-flow: column;
+  align-items: end;
+  gap: 6px;
+  height: 160px;
+  padding: 12px;
+  background: var(--paper);
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  margin-bottom: 12px;
+  overflow-x: auto;
+}
+
+.bar {
+  background: var(--sun);
+  border-radius: 8px 8px 0 0;
+  min-width: 22px;
+  display: grid;
+  align-items: end;
+  justify-items: center;
+  color: #fff;
+  font-size: 10px;
+  padding-bottom: 4px;
+}
+
+.bar.expense {
+  background: var(--rose);
+}
+
+.bar span {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

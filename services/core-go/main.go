@@ -43,6 +43,7 @@ func main() {
   mux.HandleFunc("/admin/delivery/settings", adminDeliverySettingsHandler(db))
   mux.HandleFunc("/me", meHandler(db))
   mux.HandleFunc("/me/profile", profileUpdateHandler(db))
+  mux.HandleFunc("/me/password", passwordChangeHandler(db))
   mux.HandleFunc("/me/vouchers", meVouchersHandler(db))
   mux.HandleFunc("/me/orders", meOrdersHandler(db))
   mux.HandleFunc("/vouchers", vouchersHandler(db))

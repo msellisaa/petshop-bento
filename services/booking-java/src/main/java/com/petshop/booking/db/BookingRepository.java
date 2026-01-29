@@ -26,8 +26,16 @@ public class BookingRepository {
     return jdbc.queryForList("SELECT id, customer_name, phone, pet_name, service_type, schedule_id, status, created_at FROM appointments ORDER BY created_at DESC");
   }
 
+  public List<Map<String, Object>> listAppointmentsByPhone(String phone) {
+    return jdbc.queryForList("SELECT id, customer_name, phone, pet_name, service_type, schedule_id, status, created_at FROM appointments WHERE phone = ? ORDER BY created_at DESC", phone);
+  }
+
   public List<Map<String, Object>> listServiceBookings() {
     return jdbc.queryForList("SELECT id, customer_name, phone, service_type, notes, date, status, created_at FROM service_bookings ORDER BY created_at DESC");
+  }
+
+  public List<Map<String, Object>> listServiceBookingsByPhone(String phone) {
+    return jdbc.queryForList("SELECT id, customer_name, phone, service_type, notes, date, status, created_at FROM service_bookings WHERE phone = ? ORDER BY created_at DESC", phone);
   }
 
   public String createSchedule(ScheduleRequest req) {

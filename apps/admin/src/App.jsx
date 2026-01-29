@@ -45,6 +45,23 @@ export default function App() {
   const adminHeaders = adminToken ? { 'X-Auth-Token': adminToken } : {}
   const bookingAdminHeaders = BOOKING_ADMIN_SECRET ? { 'X-Admin-Secret': BOOKING_ADMIN_SECRET } : {}
 
+  const downloadCSV = (filename, rows) => {
+    if (!rows || rows.length === 0) return
+    const headers = Object.keys(rows[0])
+    const escape = (val) => `"${String(val ?? '').replace(/"/g, '""')}"`
+    const csv = [headers.join(','), ...rows.map(r => headers.map(h => escape(r[h])).join(','))].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = filename
+    link.click()
+    URL.revokeObjectURL(link.href)
+  }
+
+  const printPDF = () => {
+    window.print()
+  }
+
   const load = () => {
     fetch(`${CORE_API}/products`, { headers: adminHeaders }).then(r => r.json()).then(setProducts).catch(() => setProducts([]))
     fetch(`${BOOKING_API}/schedules`).then(r => r.json()).then(setSchedules).catch(() => setSchedules([]))
@@ -646,6 +663,10 @@ export default function App() {
           {tab === 'order' && (
             <div className="card">
               <h3>Order Terbaru</h3>
+              <div style={{ marginBottom: 12 }}>
+                <button className="btn" type="button" onClick={() => downloadCSV('orders.csv', orders)}>Export CSV</button>
+                <button className="btn" type="button" onClick={printPDF}>Print PDF</button>
+              </div>
               <table className="table">
                 <thead>
                   <tr><th>ID</th><th>Nama</th><th>Total</th><th>Status</th><th>Update</th><th>Member</th><th>Tier</th></tr>
@@ -698,6 +719,17 @@ export default function App() {
               </div>
               <div className="card">
                 <h3>Report Penjualan</h3>
+                <div style={{ marginBottom: 12 }}>
+                  <button className="btn" type="button" onClick={() => downloadCSV('sales_report.csv', salesReport)}>Export CSV</button>
+                  <button className="btn" type="button" onClick={printPDF}>Print PDF</button>
+                </div>
+                <div className="chart">
+                  {salesReport.slice().reverse().map((r, idx) => (
+                    <div className="bar" key={r.period || idx} style={{ height: Math.max(6, (r.total_sales || 0) / 10000) }}>
+                      <span>{r.period}</span>
+                    </div>
+                  ))}
+                </div>
                 <table className="table">
                   <thead>
                     <tr><th>Periode</th><th>Orders</th><th>Gross</th><th>Diskon</th><th>Cashback</th><th>Wallet</th><th>Shipping</th><th>Total</th></tr>
@@ -735,6 +767,17 @@ export default function App() {
               </div>
               <div className="card">
                 <h3>Daftar Pengeluaran</h3>
+                <div style={{ marginBottom: 12 }}>
+                  <button className="btn" type="button" onClick={() => downloadCSV('expenses.csv', expenses)}>Export CSV</button>
+                  <button className="btn" type="button" onClick={printPDF}>Print PDF</button>
+                </div>
+                <div className="chart">
+                  {expenses.slice(0, 12).reverse().map((ex) => (
+                    <div className="bar expense" key={ex.id} style={{ height: Math.max(6, (ex.amount || 0) / 10000) }}>
+                      <span>{ex.date}</span>
+                    </div>
+                  ))}
+                </div>
                 <table className="table">
                   <thead>
                     <tr><th>Tanggal</th><th>Kategori</th><th>Deskripsi</th><th>Nominal</th><th>Aksi</th></tr>

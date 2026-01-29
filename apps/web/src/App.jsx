@@ -10,13 +10,19 @@ export default function App() {
   const [products, setProducts] = useState([])
   const [schedules, setSchedules] = useState([])
   const [zones, setZones] = useState([])
-  const [cartId, setCartId] = useState('')
+  const [cartId, setCartId] = useState(localStorage.getItem('cart_id') || '')
   const [cartItems, setCartItems] = useState([])
   const [cartOpen, setCartOpen] = useState(false)
+  const [productQuery, setProductQuery] = useState('')
+  const [productCategory, setProductCategory] = useState('all')
+  const [productSort, setProductSort] = useState('latest')
+  const [selectedProduct, setSelectedProduct] = useState(null)
   const [token, setToken] = useState(localStorage.getItem('auth_token') || '')
   const [user, setUser] = useState(null)
   const [myVouchers, setMyVouchers] = useState([])
   const [myOrders, setMyOrders] = useState([])
+  const [myAppointments, setMyAppointments] = useState([])
+  const [myServices, setMyServices] = useState([])
   const [loginForm, setLoginForm] = useState({ email: '', password: '' })
   const [registerForm, setRegisterForm] = useState({ name: '', username: '', email: '', phone: '', password: '', avatar_url: '' })
   const [registerMethod, setRegisterMethod] = useState('email')
@@ -27,7 +33,10 @@ export default function App() {
   const [googleConsent, setGoogleConsent] = useState(false)
   const [profileForm, setProfileForm] = useState({ name: '', username: '', avatar_url: '' })
   const [profileStatus, setProfileStatus] = useState('')
+  const [passwordForm, setPasswordForm] = useState({ current_password: '', new_password: '' })
+  const [passwordStatus, setPasswordStatus] = useState('')
   const [checkout, setCheckout] = useState({ name: '', phone: '', address: '', voucher_code: '', wallet_use: 0 })
+  const [checkoutStatus, setCheckoutStatus] = useState('')
   const [deliveryType, setDeliveryType] = useState('zone')
   const [deliveryInput, setDeliveryInput] = useState({ zone_id: '', lat: '', lng: '', distance_km: '' })
   const [shippingFee, setShippingFee] = useState(0)
@@ -45,6 +54,24 @@ export default function App() {
     fetch(`${BOOKING_API}/schedules`).then(r => r.json()).then(setSchedules).catch(() => setSchedules([]))
     fetch(`${CORE_API}/delivery/zones`).then(r => r.json()).then(setZones).catch(() => setZones([]))
   }, [])
+
+  useEffect(() => {
+    if (!cartId) return
+    fetch(`${CORE_API}/cart?cart_id=${cartId}`)
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          setCartItems(data.map(i => ({
+            id: i.id,
+            product_id: i.product_id,
+            name: i.product_name,
+            price: i.price,
+            qty: i.qty
+          })))
+        }
+      })
+      .catch(() => {})
+  }, [cartId])
 
   useEffect(() => {
     if (!token) return
@@ -72,9 +99,38 @@ export default function App() {
       username: user.username || '',
       avatar_url: user.avatar_url || ''
     })
+    if (user.phone) {
+      fetch(`${BOOKING_API}/appointments?phone=${encodeURIComponent(user.phone)}`)
+        .then(r => r.json())
+        .then(data => { if (Array.isArray(data)) setMyAppointments(data) })
+        .catch(() => setMyAppointments([]))
+      fetch(`${BOOKING_API}/services/booking?phone=${encodeURIComponent(user.phone)}`)
+        .then(r => r.json())
+        .then(data => { if (Array.isArray(data)) setMyServices(data) })
+        .catch(() => setMyServices([]))
+    }
   }, [user])
 
   const subtotal = useMemo(() => cartItems.reduce((acc, item) => acc + item.price * item.qty, 0), [cartItems])
+  const categories = useMemo(() => {
+    const all = new Set(products.map(p => p.category).filter(Boolean))
+    return ['all', ...Array.from(all)]
+  }, [products])
+  const filteredProducts = useMemo(() => {
+    const base = products.length ? products : demoProducts
+    const query = productQuery.trim().toLowerCase()
+    let list = base.filter(p => {
+      const inCategory = productCategory === 'all' || p.category === productCategory
+      const inQuery = !query || (p.name || '').toLowerCase().includes(query) || (p.description || '').toLowerCase().includes(query)
+      return inCategory && inQuery
+    })
+    if (productSort === 'price_low') {
+      list = [...list].sort((a, b) => (a.price || 0) - (b.price || 0))
+    } else if (productSort === 'price_high') {
+      list = [...list].sort((a, b) => (b.price || 0) - (a.price || 0))
+    }
+    return list
+  }, [products, productQuery, productCategory, productSort])
 
   const addToCart = async (product) => {
     const body = { cart_id: cartId, product_id: product.id, qty: 1 }
@@ -86,11 +142,39 @@ export default function App() {
     const data = await resp.json()
     const nextCartId = data.cart_id || cartId
     setCartId(nextCartId)
-    const existing = cartItems.find(i => i.product_id === product.id)
-    if (existing) {
-      setCartItems(cartItems.map(i => i.product_id === product.id ? { ...i, qty: i.qty + 1 } : i))
-    } else {
-      setCartItems([...cartItems, { product_id: product.id, name: product.name, price: product.price, qty: 1 }])
+    if (nextCartId) {
+      localStorage.setItem('cart_id', nextCartId)
+    }
+    setCartItems(prev => {
+      const existing = prev.find(i => i.product_id === product.id)
+      if (existing) {
+        return prev.map(i => i.product_id === product.id ? { ...i, qty: i.qty + 1 } : i)
+      }
+      return [...prev, { product_id: product.id, name: product.name, price: product.price, qty: 1 }]
+    })
+  }
+
+  const updateCartQty = async (productId, qty) => {
+    if (!cartId) return
+    const resp = await fetch(`${CORE_API}/cart/items`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cart_id: cartId, product_id: productId, qty })
+    })
+    if (resp.ok) {
+      setCartItems(prev => prev.map(i => i.product_id === productId ? { ...i, qty } : i).filter(i => i.qty > 0))
+    }
+  }
+
+  const removeCartItem = async (productId) => {
+    if (!cartId) return
+    const resp = await fetch(`${CORE_API}/cart/items`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cart_id: cartId, product_id: productId })
+    })
+    if (resp.ok) {
+      setCartItems(prev => prev.filter(i => i.product_id !== productId))
     }
   }
 
@@ -293,9 +377,35 @@ export default function App() {
     if (!refreshed.error) setUser(refreshed)
   }
 
+  const changePassword = async (e) => {
+    e.preventDefault()
+    if (!token) return
+    setPasswordStatus('')
+    const resp = await fetch(`${CORE_API}/me/password`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Auth-Token': token },
+      body: JSON.stringify(passwordForm)
+    })
+    const data = await resp.json()
+    if (data.error) {
+      setPasswordStatus(data.error)
+      return
+    }
+    setPasswordStatus('Password berhasil diubah.')
+    setPasswordForm({ current_password: '', new_password: '' })
+  }
+
   const submitOrder = async (e) => {
     e.preventDefault()
-    if (!cartId) return
+    setCheckoutStatus('')
+    if (!cartId) {
+      setCheckoutStatus('Keranjang kosong.')
+      return
+    }
+    if (!checkout.name || !checkout.phone || !checkout.address) {
+      setCheckoutStatus('Nama, telepon, dan alamat wajib diisi.')
+      return
+    }
     const resp = await fetch(`${CORE_API}/orders`, {
       method: 'POST',
       headers: {
@@ -313,6 +423,10 @@ export default function App() {
       })
     })
     const data = await resp.json()
+    if (data.error) {
+      setCheckoutStatus(data.error)
+      return
+    }
     if (!data.error) {
       setOrderInfo(data)
       setSnapUrl('')
@@ -323,6 +437,7 @@ export default function App() {
         const orders = await fetch(`${CORE_API}/me/orders`, { headers: { 'X-Auth-Token': token } }).then(r => r.json())
         if (Array.isArray(orders)) setMyOrders(orders)
       }
+      setCheckoutStatus('Order berhasil dibuat.')
     }
   }
 
@@ -453,8 +568,18 @@ export default function App() {
               <ul className="cart-list">
                 {cartItems.map(item => (
                   <li key={item.product_id}>
-                    {item.name} x {item.qty}
-                    <span>{rupiah(item.price * item.qty)}</span>
+                    <div>
+                      <strong>{item.name}</strong>
+                      <div className="qty-row">
+                        <button className="qty-btn" onClick={() => updateCartQty(item.product_id, item.qty - 1)}>-</button>
+                        <span>{item.qty}</span>
+                        <button className="qty-btn" onClick={() => updateCartQty(item.product_id, item.qty + 1)}>+</button>
+                      </div>
+                    </div>
+                    <div className="cart-actions">
+                      <span>{rupiah(item.price * item.qty)}</span>
+                      <button className="btn mini" onClick={() => removeCartItem(item.product_id)}>Hapus</button>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -466,6 +591,27 @@ export default function App() {
             </div>
             <a className="btn primary" href="#checkout" onClick={() => setCartOpen(false)}>Checkout</a>
           </aside>
+        </div>
+      )}
+
+      {selectedProduct && (
+        <div className="modal-overlay" onClick={() => setSelectedProduct(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <button className="modal-close" onClick={() => setSelectedProduct(null)}>Tutup</button>
+            {selectedProduct.image_url && (
+              <img className="modal-img" src={`${CORE_API}${selectedProduct.image_url}`} alt={selectedProduct.name} />
+            )}
+            <h3>{selectedProduct.name}</h3>
+            <p>{selectedProduct.description}</p>
+            <div className="row">
+              <span className="cat-pill">{selectedProduct.category || 'Kebutuhan Kucing'}</span>
+              <span className="stock">Stok {selectedProduct.stock}</span>
+            </div>
+            <div className="price-row">
+              <strong>{rupiah(selectedProduct.price)}</strong>
+              <button className="btn primary" onClick={() => addToCart(selectedProduct)}>Tambah ke Keranjang</button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -540,9 +686,20 @@ export default function App() {
             Keranjang {cartItems.length} item - {rupiah(subtotal)}
           </div>
         </div>
+        <div className="filter-row">
+          <input placeholder="Cari produk..." value={productQuery} onChange={(e) => setProductQuery(e.target.value)} />
+          <select value={productCategory} onChange={(e) => setProductCategory(e.target.value)}>
+            {categories.map(c => <option key={c} value={c}>{c === 'all' ? 'Semua Kategori' : c}</option>)}
+          </select>
+          <select value={productSort} onChange={(e) => setProductSort(e.target.value)}>
+            <option value="latest">Terbaru</option>
+            <option value="price_low">Harga Termurah</option>
+            <option value="price_high">Harga Termahal</option>
+          </select>
+        </div>
         <div className="product-grid">
-          {(products.length ? products : demoProducts).map(p => (
-            <div className="product-card" key={p.id || p.name}>
+          {filteredProducts.map(p => (
+            <div className="product-card" key={p.id || p.name} onClick={() => setSelectedProduct(p)}>
               {p.image_url && <img className="product-img" src={`${CORE_API}${p.image_url}`} alt={p.name} />}
               <div className="product-top">
                 <span className="cat-pill">{p.category || 'Kebutuhan Kucing'}</span>
@@ -552,7 +709,7 @@ export default function App() {
               <p>{p.description}</p>
               <div className="price-row">
                 <strong>{rupiah(p.price)}</strong>
-                <button className="btn mini" onClick={() => addToCart(p)}>Tambah</button>
+                <button className="btn mini" onClick={(e) => { e.stopPropagation(); addToCart(p) }}>Tambah</button>
               </div>
             </div>
           ))}
@@ -632,6 +789,7 @@ export default function App() {
               <input placeholder="Kode voucher (opsional)" value={checkout.voucher_code} onChange={(e) => setCheckout({ ...checkout, voucher_code: e.target.value })} />
               <input placeholder="Gunakan cashback (angka)" type="number" value={checkout.wallet_use} onChange={(e) => setCheckout({ ...checkout, wallet_use: Number(e.target.value) })} />
               <button className="btn primary" type="submit">Checkout</button>
+              {checkoutStatus && <small>{checkoutStatus}</small>}
             </form>
           </div>
           <div className="checkout-card">
@@ -647,7 +805,12 @@ export default function App() {
                   <button className="btn outline" onClick={requestMidtrans}>Bayar via Midtrans</button>
                   <button className="btn outline" onClick={checkStatus}>Cek Status</button>
                 </div>
-                {snapUrl && <p>Link pembayaran: {snapUrl}</p>}
+                {snapUrl && (
+                  <div className="pay-row">
+                    <a className="btn primary" href={snapUrl} target="_blank" rel="noreferrer">Buka Pembayaran</a>
+                    <small>Link Midtrans siap dibuka di tab baru.</small>
+                  </div>
+                )}
                 {paymentStatus && <p>Status pembayaran: {paymentStatus.transaction_status || paymentStatus.status_message || 'unknown'}</p>}
               </div>
             ) : (
@@ -752,6 +915,12 @@ export default function App() {
                   <small>Username bisa diubah selama 30 hari sejak daftar.</small>
                   {profileStatus && <small>{profileStatus}</small>}
                   <button className="btn outline" type="submit">Simpan Profil</button>
+                </form>
+                <form className="form-grid" onSubmit={changePassword}>
+                  <input placeholder="Password sekarang" type="password" value={passwordForm.current_password} onChange={(e) => setPasswordForm({ ...passwordForm, current_password: e.target.value })} />
+                  <input placeholder="Password baru" type="password" value={passwordForm.new_password} onChange={(e) => setPasswordForm({ ...passwordForm, new_password: e.target.value })} />
+                  {passwordStatus && <small>{passwordStatus}</small>}
+                  <button className="btn outline" type="submit">Ubah Password</button>
                 </form>
                 <button className="btn outline" onClick={logout}>Keluar</button>
               </div>
@@ -884,6 +1053,64 @@ export default function App() {
                 </tbody>
               </table>
             )}
+          </div>
+        </section>
+      )}
+
+      {user && (
+        <section className="section">
+          <div className="section-head">
+            <div>
+              <h2>Riwayat Booking</h2>
+              <p>Appointment dokter serta grooming/penitipan kamu.</p>
+            </div>
+            <div className="badge">Update terkini</div>
+          </div>
+          <div className="checkout-grid">
+            <div className="table-card">
+              <h3>Appointment Dokter</h3>
+              {myAppointments.length === 0 ? (
+                <p>Belum ada appointment.</p>
+              ) : (
+                <table className="table">
+                  <thead>
+                    <tr><th>Nama</th><th>Pet</th><th>Layanan</th><th>Status</th></tr>
+                  </thead>
+                  <tbody>
+                    {myAppointments.map(a => (
+                      <tr key={a.id}>
+                        <td>{a.customer_name}</td>
+                        <td>{a.pet_name}</td>
+                        <td>{a.service_type}</td>
+                        <td>{a.status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div className="table-card">
+              <h3>Grooming / Penitipan</h3>
+              {myServices.length === 0 ? (
+                <p>Belum ada booking layanan.</p>
+              ) : (
+                <table className="table">
+                  <thead>
+                    <tr><th>Nama</th><th>Layanan</th><th>Tanggal</th><th>Status</th></tr>
+                  </thead>
+                  <tbody>
+                    {myServices.map(s => (
+                      <tr key={s.id}>
+                        <td>{s.customer_name}</td>
+                        <td>{s.service_type}</td>
+                        <td>{s.date}</td>
+                        <td>{s.status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
           </div>
         </section>
       )}
