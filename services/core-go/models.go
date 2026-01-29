@@ -44,6 +44,11 @@ type OrderRequest struct {
   Phone        string `json:"phone"`
   Address      string `json:"address"`
   ShippingFee  int    `json:"shipping_fee"`
+  DeliveryType string `json:"delivery_type"`
+  ZoneID       string `json:"zone_id"`
+  Lat          float64 `json:"lat"`
+  Lng          float64 `json:"lng"`
+  DistanceKm   float64 `json:"distance_km"`
   VoucherCode  string `json:"voucher_code"`
   WalletUse    int    `json:"wallet_use"`
 }

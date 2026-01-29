@@ -3,6 +3,7 @@ package main
 import (
   "database/sql"
   "encoding/json"
+  "errors"
   "math"
   "net/http"
   "os"
@@ -84,6 +85,46 @@ func deliveryQuoteHandler(db *sql.DB) http.HandlerFunc {
     default:
       writeJSON(w, http.StatusBadRequest, errMsg("invalid type"))
     }
+  }
+}
+
+func quoteShippingFee(db *sql.DB, req DeliveryQuoteRequest) (int, error) {
+  mode := strings.ToLower(strings.TrimSpace(req.Type))
+  switch mode {
+  case "zone":
+    var fee int
+    err := db.QueryRow(`SELECT flat_fee FROM delivery_zones WHERE id = $1 AND active = TRUE`, req.ZoneID).Scan(&fee)
+    if err != nil {
+      return 0, errors.New("zone not found")
+    }
+    return fee, nil
+  case "per_km":
+    var baseLat, baseLng float64
+    var perKm, minFee int
+    err := db.QueryRow(`SELECT base_lat, base_lng, per_km_rate, min_fee FROM delivery_settings WHERE id = 1`).Scan(&baseLat, &baseLng, &perKm, &minFee)
+    if err != nil {
+      return 0, errors.New("delivery settings not found")
+    }
+    dist := req.Distance
+    if dist <= 0 && req.Lat != 0 && req.Lng != 0 {
+      dist = haversineKm(baseLat, baseLng, req.Lat, req.Lng)
+    }
+    if dist <= 0 {
+      return 0, errors.New("distance_km or lat/lng required")
+    }
+    fee := int(math.Ceil(dist * float64(perKm)))
+    if fee < minFee {
+      fee = minFee
+    }
+    return fee, nil
+  case "external":
+    fee, _ := externalShippingQuote(req)
+    if fee <= 0 {
+      return 0, errors.New("external shipping not configured")
+    }
+    return fee, nil
+  default:
+    return 0, errors.New("invalid delivery type")
   }
 }
 

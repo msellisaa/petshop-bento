@@ -46,6 +46,8 @@ func main() {
   mux.HandleFunc("/me/password", passwordChangeHandler(db))
   mux.HandleFunc("/me/vouchers", meVouchersHandler(db))
   mux.HandleFunc("/me/orders", meOrdersHandler(db))
+  mux.HandleFunc("/me/appointments", meAppointmentsHandler(db))
+  mux.HandleFunc("/me/service-bookings", meServiceBookingsHandler(db))
   mux.HandleFunc("/vouchers", vouchersHandler(db))
   mux.HandleFunc("/admin/members", membersHandler(db))
   mux.HandleFunc("/admin/vouchers", adminVouchersHandler(db))

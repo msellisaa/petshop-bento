@@ -406,7 +406,7 @@ func adminLoginHandler(db *sql.DB) http.HandlerFunc {
     }
     var id, hash, name, email, role string
     var isAdmin bool
-    email := strings.ToLower(strings.TrimSpace(req.Email))
+    email = strings.ToLower(strings.TrimSpace(req.Email))
     err := db.QueryRow(`SELECT id, password_hash, name, email, is_admin, role FROM users WHERE email = $1`, email).
       Scan(&id, &hash, &name, &email, &isAdmin, &role)
     if err != nil || !isAdmin {
@@ -668,6 +668,90 @@ func meOrdersHandler(db *sql.DB) http.HandlerFunc {
         "status": status,
         "created_at": createdAt,
       })
+    }
+    writeJSON(w, http.StatusOK, out)
+  }
+}
+
+func meAppointmentsHandler(db *sql.DB) http.HandlerFunc {
+  return func(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodGet {
+      writeJSON(w, http.StatusMethodNotAllowed, errMsg("method not allowed"))
+      return
+    }
+    userID, err := getUserIDFromToken(db, r)
+    if err != nil {
+      writeJSON(w, http.StatusUnauthorized, errMsg("unauthorized"))
+      return
+    }
+    var phone sql.NullString
+    err = db.QueryRow(`SELECT phone FROM users WHERE id = $1`, userID).Scan(&phone)
+    if err != nil {
+      writeJSON(w, http.StatusInternalServerError, errMsg("not found"))
+      return
+    }
+    if strings.TrimSpace(phone.String) == "" {
+      writeJSON(w, http.StatusOK, []any{})
+      return
+    }
+    target := bookingAPIURL() + "/appointments?phone=" + url.QueryEscape(phone.String)
+    resp, err := doBookingRequest(http.MethodGet, target, nil)
+    if err != nil {
+      writeJSON(w, http.StatusBadGateway, errMsg("booking service error"))
+      return
+    }
+    defer resp.Body.Close()
+    body, _ := io.ReadAll(resp.Body)
+    if resp.StatusCode >= 400 {
+      writeJSON(w, resp.StatusCode, errMsg("booking error"))
+      return
+    }
+    var out any
+    if err := json.Unmarshal(body, &out); err != nil {
+      writeJSON(w, http.StatusBadGateway, errMsg("invalid booking response"))
+      return
+    }
+    writeJSON(w, http.StatusOK, out)
+  }
+}
+
+func meServiceBookingsHandler(db *sql.DB) http.HandlerFunc {
+  return func(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodGet {
+      writeJSON(w, http.StatusMethodNotAllowed, errMsg("method not allowed"))
+      return
+    }
+    userID, err := getUserIDFromToken(db, r)
+    if err != nil {
+      writeJSON(w, http.StatusUnauthorized, errMsg("unauthorized"))
+      return
+    }
+    var phone sql.NullString
+    err = db.QueryRow(`SELECT phone FROM users WHERE id = $1`, userID).Scan(&phone)
+    if err != nil {
+      writeJSON(w, http.StatusInternalServerError, errMsg("not found"))
+      return
+    }
+    if strings.TrimSpace(phone.String) == "" {
+      writeJSON(w, http.StatusOK, []any{})
+      return
+    }
+    target := bookingAPIURL() + "/services/booking?phone=" + url.QueryEscape(phone.String)
+    resp, err := doBookingRequest(http.MethodGet, target, nil)
+    if err != nil {
+      writeJSON(w, http.StatusBadGateway, errMsg("booking service error"))
+      return
+    }
+    defer resp.Body.Close()
+    body, _ := io.ReadAll(resp.Body)
+    if resp.StatusCode >= 400 {
+      writeJSON(w, resp.StatusCode, errMsg("booking error"))
+      return
+    }
+    var out any
+    if err := json.Unmarshal(body, &out); err != nil {
+      writeJSON(w, http.StatusBadGateway, errMsg("invalid booking response"))
+      return
     }
     writeJSON(w, http.StatusOK, out)
   }
