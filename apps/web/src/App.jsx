@@ -11,6 +11,7 @@ export default function App() {
   const [zones, setZones] = useState([])
   const [cartId, setCartId] = useState('')
   const [cartItems, setCartItems] = useState([])
+  const [cartOpen, setCartOpen] = useState(false)
   const [token, setToken] = useState(localStorage.getItem('auth_token') || '')
   const [user, setUser] = useState(null)
   const [myVouchers, setMyVouchers] = useState([])
@@ -196,9 +197,38 @@ export default function App() {
         </nav>
         <div className="top-actions">
           <button className="pill">Chat WhatsApp</button>
-          <button className="pill ghost">Belanja</button>
+          <button className="pill ghost" onClick={() => setCartOpen(true)}>Keranjang ({cartItems.length})</button>
         </div>
       </header>
+
+      {cartOpen && (
+        <div className="cart-overlay" onClick={() => setCartOpen(false)}>
+          <aside className="cart-drawer" onClick={(e) => e.stopPropagation()}>
+            <div className="cart-header">
+              <strong>Keranjang</strong>
+              <button className="pill ghost" onClick={() => setCartOpen(false)}>Tutup</button>
+            </div>
+            {cartItems.length === 0 ? (
+              <p>Keranjang kosong.</p>
+            ) : (
+              <ul className="cart-list">
+                {cartItems.map(item => (
+                  <li key={item.product_id}>
+                    {item.name} x {item.qty}
+                    <span>{rupiah(item.price * item.qty)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="summary">
+              <p>Subtotal <span>{rupiah(subtotal)}</span></p>
+              <p>Ongkir <span>{rupiah(shippingFee)}</span></p>
+              <p className="total">Total <span>{rupiah(subtotal + shippingFee)}</span></p>
+            </div>
+            <a className="btn primary" href="#checkout" onClick={() => setCartOpen(false)}>Checkout</a>
+          </aside>
+        </div>
+      )}
 
       <section className="hero">
         <div className="hero-left">
@@ -344,7 +374,7 @@ export default function App() {
         </div>
       </section>
 
-      <section className="section">
+      <section id="checkout" className="section">
         <div className="section-head">
           <div>
             <h2>Checkout Cepat</h2>
