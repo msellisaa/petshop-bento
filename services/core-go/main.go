@@ -14,12 +14,14 @@ func main() {
   defer db.Close()
 
   mux := http.NewServeMux()
+  _ = os.MkdirAll("uploads", 0755)
   mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
     writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
   })
 
   mux.HandleFunc("/products", productsHandler(db))
   mux.HandleFunc("/products/", productHandler(db))
+  mux.Handle("/uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir("uploads"))))
   mux.HandleFunc("/cart/items", cartItemHandler(db))
   mux.HandleFunc("/cart", cartHandler(db))
   mux.HandleFunc("/orders", orderHandler(db))
@@ -27,9 +29,7 @@ func main() {
   mux.HandleFunc("/delivery/quote", deliveryQuoteHandler(db))
   mux.HandleFunc("/auth/register", registerHandler(db))
   mux.HandleFunc("/auth/login", loginHandler(db))
-  mux.HandleFunc("/auth/otp/request", otpRequestHandler(db))
-  mux.HandleFunc("/auth/otp/verify", otpVerifyHandler(db))
-  mux.HandleFunc("/auth/google/login", googleLoginHandler(db))
+  mux.HandleFunc("/auth/logout", logoutHandler(db))
   mux.HandleFunc("/admin/login", adminLoginHandler(db))
   mux.HandleFunc("/admin/bootstrap", adminBootstrapHandler(db))
   mux.HandleFunc("/admin/staff", adminStaffHandler(db))
@@ -43,6 +43,7 @@ func main() {
   mux.HandleFunc("/admin/vouchers", adminVouchersHandler(db))
   mux.HandleFunc("/admin/orders", adminOrdersHandler(db))
   mux.HandleFunc("/admin/orders/", adminOrderStatusHandler(db))
+  mux.HandleFunc("/admin/products/", productImageUploadHandler(db))
   mux.HandleFunc("/webhooks/midtrans", midtransWebhookHandler(db))
 
   handler := withCORS(mux)

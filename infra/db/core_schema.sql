@@ -35,8 +35,6 @@ CREATE TABLE users (
   email TEXT UNIQUE NOT NULL,
   phone TEXT NOT NULL,
   password_hash TEXT NOT NULL,
-  google_id TEXT UNIQUE,
-  auth_provider TEXT NOT NULL DEFAULT 'password',
   is_admin BOOLEAN NOT NULL DEFAULT FALSE,
   role TEXT NOT NULL DEFAULT 'member',
   total_spend INT NOT NULL DEFAULT 0,
@@ -48,25 +46,7 @@ CREATE TABLE users (
 CREATE TABLE sessions (
   token TEXT PRIMARY KEY,
   user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE TABLE otp_requests (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  email TEXT NOT NULL,
-  purpose TEXT NOT NULL,
-  code TEXT NOT NULL,
   expires_at TIMESTAMP NOT NULL,
-  verified_at TIMESTAMP,
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE TABLE otp_tokens (
-  token TEXT PRIMARY KEY,
-  email TEXT NOT NULL,
-  purpose TEXT NOT NULL,
-  expires_at TIMESTAMP NOT NULL,
-  used BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMP DEFAULT NOW()
 );
 
