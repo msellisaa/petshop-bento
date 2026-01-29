@@ -147,12 +147,21 @@ func otpRequestHandler(db *sql.DB) http.HandlerFunc {
       return
     }
 
+    if smtpEnabled() {
+      if err := sendOtpEmail(email, code); err != nil {
+        writeJSON(w, http.StatusInternalServerError, errMsg("otp delivery failed"))
+        return
+      }
+      writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+      return
+    }
+
     echo := strings.ToLower(strings.TrimSpace(os.Getenv("OTP_ECHO")))
     if echo == "" || echo == "true" || echo == "1" || echo == "yes" {
       writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "otp": code, "expires_in": 300})
       return
     }
-    writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+    writeJSON(w, http.StatusInternalServerError, errMsg("otp delivery not configured"))
   }
 }
 

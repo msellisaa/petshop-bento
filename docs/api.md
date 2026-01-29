@@ -24,6 +24,7 @@ Auth:
 - POST /auth/otp/request
 - POST /auth/otp/verify
 - POST /auth/google/login
+  - OTP via email uses SMTP_* env vars; fallback dev mode uses OTP_ECHO=true
 - POST /auth/logout
 - POST /admin/login
 - POST /admin/bootstrap

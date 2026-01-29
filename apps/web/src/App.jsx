@@ -21,6 +21,7 @@ export default function App() {
   const [otpState, setOtpState] = useState({ code: '', token: '', message: '', sent: false, verified: false })
   const [googleForm, setGoogleForm] = useState({ email: '', name: '', phone: '', google_id: '' })
   const [googleStatus, setGoogleStatus] = useState('')
+  const [googleConsent, setGoogleConsent] = useState(false)
   const [checkout, setCheckout] = useState({ name: '', phone: '', address: '', voucher_code: '', wallet_use: 0 })
   const [deliveryType, setDeliveryType] = useState('zone')
   const [deliveryInput, setDeliveryInput] = useState({ zone_id: '', lat: '', lng: '', distance_km: '' })
@@ -149,6 +150,10 @@ export default function App() {
 
   const submitGoogle = async () => {
     setGoogleStatus('')
+    if (!googleConsent) {
+      setGoogleStatus('Setujui izin akses Google terlebih dulu.')
+      return
+    }
     const payload = {
       email: googleForm.email,
       name: googleForm.name,
@@ -594,9 +599,18 @@ export default function App() {
                 <input placeholder="Nama" value={googleForm.name} onChange={(e) => setGoogleForm({ ...googleForm, name: e.target.value })} />
                 <input placeholder="Telepon" value={googleForm.phone} onChange={(e) => setGoogleForm({ ...googleForm, phone: e.target.value })} />
                 <input placeholder="Google ID (opsional)" value={googleForm.google_id} onChange={(e) => setGoogleForm({ ...googleForm, google_id: e.target.value })} />
-                <button className="btn" type="submit">Login/Daftar dengan Google</button>
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={googleConsent}
+                    onChange={(e) => setGoogleConsent(e.target.checked)}
+                  />
+                  <span>Saya setuju izin akses Google untuk login/daftar.</span>
+                </label>
+                <button className="btn" type="submit" disabled={!googleConsent}>Login/Daftar dengan Google</button>
                 {googleStatus && <small>{googleStatus}</small>}
               </form>
+              <small>Daftar Google tidak butuh OTP.</small>
             </div>
           </div>
         </div>
