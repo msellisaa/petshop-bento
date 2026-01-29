@@ -94,6 +94,22 @@ CREATE TABLE orders (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
+CREATE TABLE delivery_zones (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL,
+  flat_fee INT NOT NULL DEFAULT 0,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE delivery_settings (
+  id INT PRIMARY KEY,
+  base_lat DOUBLE PRECISION NOT NULL DEFAULT -6.2216339332113595,
+  base_lng DOUBLE PRECISION NOT NULL DEFAULT 106.34573045889455,
+  per_km_rate INT NOT NULL DEFAULT 3000,
+  min_fee INT NOT NULL DEFAULT 8000
+);
+
 INSERT INTO loyalty_tiers (name, min_spend, discount_pct, cashback_pct) VALUES
 ('Bronze', 0, 0, 0),
 ('Silver', 1000000, 2, 1),
@@ -120,3 +136,12 @@ VALUES
 ('SILVER100', 'Reward Silver', 'flat', 100000, 300000, 0, NULL, TRUE),
 ('GOLD200', 'Reward Gold', 'flat', 200000, 500000, 0, NULL, TRUE),
 ('PLAT300', 'Reward Platinum', 'flat', 300000, 800000, 0, NULL, TRUE);
+
+INSERT INTO delivery_settings (id, base_lat, base_lng, per_km_rate, min_fee)
+VALUES (1, -6.2216339332113595, 106.34573045889455, 3000, 8000);
+
+INSERT INTO delivery_zones (name, flat_fee, active)
+VALUES
+('Cikande', 10000, TRUE),
+('Serang', 15000, TRUE),
+('Tangerang', 20000, TRUE);

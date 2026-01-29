@@ -75,6 +75,27 @@ type OrderStatusRequest struct {
   Status string `json:"status"`
 }
 
+type DeliveryQuoteRequest struct {
+  Type     string  `json:"type"`
+  ZoneID   string  `json:"zone_id"`
+  Lat      float64 `json:"lat"`
+  Lng      float64 `json:"lng"`
+  Distance float64 `json:"distance_km"`
+}
+
+type DeliveryZoneRequest struct {
+  Name    string `json:"name"`
+  FlatFee int    `json:"flat_fee"`
+  Active  bool   `json:"active"`
+}
+
+type DeliverySettingsRequest struct {
+  BaseLat  float64 `json:"base_lat"`
+  BaseLng  float64 `json:"base_lng"`
+  PerKm    int     `json:"per_km_rate"`
+  MinFee   int     `json:"min_fee"`
+}
+
 type VoucherCreateRequest struct {
   Code          string `json:"code"`
   Title         string `json:"title"`

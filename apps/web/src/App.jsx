@@ -8,6 +8,7 @@ const rupiah = (n) => new Intl.NumberFormat('id-ID', { style: 'currency', curren
 export default function App() {
   const [products, setProducts] = useState([])
   const [schedules, setSchedules] = useState([])
+  const [zones, setZones] = useState([])
   const [cartId, setCartId] = useState('')
   const [cartItems, setCartItems] = useState([])
   const [token, setToken] = useState(localStorage.getItem('auth_token') || '')
@@ -17,6 +18,10 @@ export default function App() {
   const [loginForm, setLoginForm] = useState({ email: '', password: '' })
   const [registerForm, setRegisterForm] = useState({ name: '', email: '', phone: '', password: '' })
   const [checkout, setCheckout] = useState({ name: '', phone: '', address: '', voucher_code: '', wallet_use: 0 })
+  const [deliveryType, setDeliveryType] = useState('zone')
+  const [deliveryInput, setDeliveryInput] = useState({ zone_id: '', lat: '', lng: '', distance_km: '' })
+  const [shippingFee, setShippingFee] = useState(0)
+  const [quoteInfo, setQuoteInfo] = useState(null)
   const [orderInfo, setOrderInfo] = useState(null)
   const [snapUrl, setSnapUrl] = useState('')
   const [paymentStatus, setPaymentStatus] = useState(null)
@@ -24,6 +29,7 @@ export default function App() {
   useEffect(() => {
     fetch(`${CORE_API}/products`).then(r => r.json()).then(setProducts).catch(() => setProducts([]))
     fetch(`${BOOKING_API}/schedules`).then(r => r.json()).then(setSchedules).catch(() => setSchedules([]))
+    fetch(`${CORE_API}/delivery/zones`).then(r => r.json()).then(setZones).catch(() => setZones([]))
   }, [])
 
   useEffect(() => {
@@ -107,7 +113,7 @@ export default function App() {
         customer_name: checkout.name,
         phone: checkout.phone,
         address: checkout.address,
-        shipping_fee: 0,
+        shipping_fee: shippingFee,
         voucher_code: checkout.voucher_code,
         wallet_use: Number(checkout.wallet_use || 0)
       })
@@ -142,6 +148,26 @@ export default function App() {
     })
     const data = await resp.json()
     if (data.redirect_url) setSnapUrl(data.redirect_url)
+  }
+
+  const requestQuote = async () => {
+    const payload = {
+      type: deliveryType,
+      zone_id: deliveryInput.zone_id,
+      lat: Number(deliveryInput.lat || 0),
+      lng: Number(deliveryInput.lng || 0),
+      distance_km: Number(deliveryInput.distance_km || 0)
+    }
+    const resp = await fetch(`${CORE_API}/delivery/quote`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    const data = await resp.json()
+    if (!data.error) {
+      setShippingFee(data.fee || 0)
+      setQuoteInfo(data)
+    }
   }
 
   const checkStatus = async () => {
@@ -327,6 +353,8 @@ export default function App() {
               </ul>
             )}
             <p><strong>Subtotal: {rupiah(subtotal)}</strong></p>
+            <p>Ongkir: {rupiah(shippingFee)}</p>
+            <p><strong>Estimasi total: {rupiah(subtotal + shippingFee)}</strong></p>
           </div>
           <div className="card">
             <h3>Buat Pesanan</h3>
@@ -335,6 +363,31 @@ export default function App() {
               <input placeholder="Telepon" value={checkout.phone} onChange={(e) => setCheckout({ ...checkout, phone: e.target.value })} />
               <input placeholder="Alamat" value={checkout.address} onChange={(e) => setCheckout({ ...checkout, address: e.target.value })} />
               <input placeholder="Kode voucher (opsional)" value={checkout.voucher_code} onChange={(e) => setCheckout({ ...checkout, voucher_code: e.target.value })} />
+              <div className="delivery-box">
+                <label>Metode Pengiriman</label>
+                <select value={deliveryType} onChange={(e) => setDeliveryType(e.target.value)}>
+                  <option value="zone">Tarif Flat (Zona)</option>
+                  <option value="per_km">Tarif per KM</option>
+                  <option value="external">Ongkir Eksternal</option>
+                </select>
+                {deliveryType === 'zone' && (
+                  <select value={deliveryInput.zone_id} onChange={(e) => setDeliveryInput({ ...deliveryInput, zone_id: e.target.value })}>
+                    <option value="">Pilih Zona</option>
+                    {zones.map(z => <option key={z.id} value={z.id}>{z.name} - {rupiah(z.flat_fee)}</option>)}
+                  </select>
+                )}
+                {deliveryType !== 'zone' && (
+                  <>
+                    <input placeholder="Latitude" value={deliveryInput.lat} onChange={(e) => setDeliveryInput({ ...deliveryInput, lat: e.target.value })} />
+                    <input placeholder="Longitude" value={deliveryInput.lng} onChange={(e) => setDeliveryInput({ ...deliveryInput, lng: e.target.value })} />
+                  </>
+                )}
+                {deliveryType === 'per_km' && (
+                  <input placeholder="Distance (km, optional)" value={deliveryInput.distance_km} onChange={(e) => setDeliveryInput({ ...deliveryInput, distance_km: e.target.value })} />
+                )}
+                <button type="button" className="btn btn-outline" onClick={requestQuote}>Hitung Ongkir</button>
+                {quoteInfo && <small>Ongkir: {rupiah(quoteInfo.fee)} {quoteInfo.distance_km ? `(${quoteInfo.distance_km.toFixed(2)} km)` : ''}</small>}
+              </div>
               <input placeholder="Gunakan cashback (angka)" type="number" value={checkout.wallet_use} onChange={(e) => setCheckout({ ...checkout, wallet_use: Number(e.target.value) })} />
               <button className="btn" type="submit">Checkout</button>
             </form>

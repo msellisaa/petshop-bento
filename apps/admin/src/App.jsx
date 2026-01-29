@@ -16,10 +16,13 @@ export default function App() {
   const [appointments, setAppointments] = useState([])
   const [serviceBookings, setServiceBookings] = useState([])
   const [staff, setStaff] = useState([])
+  const [zones, setZones] = useState([])
+  const [deliverySettings, setDeliverySettings] = useState({ base_lat: -6.2216339332113595, base_lng: 106.34573045889455, per_km_rate: 3000, min_fee: 8000 })
   const [productForm, setProductForm] = useState({ name: '', price: 0, stock: 0, category: '' })
   const [scheduleForm, setScheduleForm] = useState({ doctor_name: '', day_of_week: 'Senin', start_time: '09:00', end_time: '16:00', location: 'Petshop Bento - Cikande' })
   const [voucherForm, setVoucherForm] = useState({ code: '', title: '', discount_type: 'flat', discount_value: 0, min_spend: 0, max_uses: 0, expires_at: '', active: true })
   const [staffForm, setStaffForm] = useState({ name: '', email: '', phone: '', password: '', role: 'staff' })
+  const [zoneForm, setZoneForm] = useState({ name: '', flat_fee: 0, active: true })
 
   const adminHeaders = adminToken ? { 'X-Auth-Token': adminToken } : {}
   const bookingAdminHeaders = BOOKING_ADMIN_SECRET ? { 'X-Admin-Secret': BOOKING_ADMIN_SECRET } : {}
@@ -31,6 +34,8 @@ export default function App() {
     fetch(`${CORE_API}/admin/orders`, { headers: adminHeaders }).then(r => r.json()).then(setOrders).catch(() => setOrders([]))
     fetch(`${CORE_API}/admin/vouchers`, { headers: adminHeaders }).then(r => r.json()).then(setVouchers).catch(() => setVouchers([]))
     fetch(`${CORE_API}/admin/staff`, { headers: adminHeaders }).then(r => r.json()).then(setStaff).catch(() => setStaff([]))
+    fetch(`${CORE_API}/admin/delivery/zones`, { headers: adminHeaders }).then(r => r.json()).then(setZones).catch(() => setZones([]))
+    fetch(`${CORE_API}/admin/delivery/settings`, { headers: adminHeaders }).then(r => r.json()).then(data => { if (!data.error) setDeliverySettings(data) }).catch(() => {})
     fetch(`${BOOKING_API}/admin/appointments`, { headers: bookingAdminHeaders }).then(r => r.json()).then(setAppointments).catch(() => setAppointments([]))
     fetch(`${BOOKING_API}/admin/service-bookings`, { headers: bookingAdminHeaders }).then(r => r.json()).then(setServiceBookings).catch(() => setServiceBookings([]))
   }
@@ -73,6 +78,29 @@ export default function App() {
       headers: { 'Content-Type': 'application/json', ...adminHeaders },
       body: JSON.stringify(staffForm)
     }).then(() => { setStaffForm({ name: '', email: '', phone: '', password: '', role: 'staff' }); load() })
+  }
+
+  const submitZone = (e) => {
+    e.preventDefault()
+    fetch(`${CORE_API}/admin/delivery/zones`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...adminHeaders },
+      body: JSON.stringify(zoneForm)
+    }).then(() => { setZoneForm({ name: '', flat_fee: 0, active: true }); load() })
+  }
+
+  const saveDeliverySettings = (e) => {
+    e.preventDefault()
+    fetch(`${CORE_API}/admin/delivery/settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...adminHeaders },
+      body: JSON.stringify({
+        base_lat: Number(deliverySettings.base_lat),
+        base_lng: Number(deliverySettings.base_lng),
+        per_km_rate: Number(deliverySettings.per_km_rate),
+        min_fee: Number(deliverySettings.min_fee)
+      })
+    }).then(() => load())
   }
 
   const updateOrderStatus = (id, status) => {
@@ -132,6 +160,7 @@ export default function App() {
           <button className={`nav-btn ${tab === 'booking' ? 'active' : ''}`} onClick={() => setTab('booking')}>Booking</button>
           <button className={`nav-btn ${tab === 'member' ? 'active' : ''}`} onClick={() => setTab('member')}>Member</button>
           <button className={`nav-btn ${tab === 'staff' ? 'active' : ''}`} onClick={() => setTab('staff')}>Staff</button>
+          <button className={`nav-btn ${tab === 'delivery' ? 'active' : ''}`} onClick={() => setTab('delivery')}>Delivery</button>
           <button className={`nav-btn ${tab === 'voucher' ? 'active' : ''}`} onClick={() => setTab('voucher')}>Voucher</button>
           <button className={`nav-btn ${tab === 'order' ? 'active' : ''}`} onClick={() => setTab('order')}>Order</button>
         </aside>
@@ -295,6 +324,49 @@ export default function App() {
                         <td>{s.email}</td>
                         <td>{s.role}</td>
                         <td>{s.phone}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          {tab === 'delivery' && (
+            <div>
+              <div className="card">
+                <h3>Delivery Settings (Per KM)</h3>
+                <form className="form-grid" onSubmit={saveDeliverySettings}>
+                  <input placeholder="Base Lat" value={deliverySettings.base_lat} onChange={(e) => setDeliverySettings({ ...deliverySettings, base_lat: e.target.value })} />
+                  <input placeholder="Base Lng" value={deliverySettings.base_lng} onChange={(e) => setDeliverySettings({ ...deliverySettings, base_lng: e.target.value })} />
+                  <input placeholder="Rate per KM" type="number" value={deliverySettings.per_km_rate} onChange={(e) => setDeliverySettings({ ...deliverySettings, per_km_rate: e.target.value })} />
+                  <input placeholder="Min Fee" type="number" value={deliverySettings.min_fee} onChange={(e) => setDeliverySettings({ ...deliverySettings, min_fee: e.target.value })} />
+                  <button className="btn" type="submit">Simpan</button>
+                </form>
+              </div>
+              <div className="card">
+                <h3>Tambah Zone (Flat Fee)</h3>
+                <form className="form-grid" onSubmit={submitZone}>
+                  <input placeholder="Nama Zone" value={zoneForm.name} onChange={(e) => setZoneForm({ ...zoneForm, name: e.target.value })} />
+                  <input placeholder="Flat Fee" type="number" value={zoneForm.flat_fee} onChange={(e) => setZoneForm({ ...zoneForm, flat_fee: Number(e.target.value) })} />
+                  <select value={zoneForm.active ? 'true' : 'false'} onChange={(e) => setZoneForm({ ...zoneForm, active: e.target.value === 'true' })}>
+                    <option value="true">Active</option>
+                    <option value="false">Inactive</option>
+                  </select>
+                  <button className="btn" type="submit">Simpan</button>
+                </form>
+              </div>
+              <div className="card">
+                <h3>Daftar Zone</h3>
+                <table className="table">
+                  <thead>
+                    <tr><th>Zone</th><th>Flat Fee</th><th>Active</th></tr>
+                  </thead>
+                  <tbody>
+                    {zones.map(z => (
+                      <tr key={z.id}>
+                        <td>{z.name}</td>
+                        <td>{z.flat_fee}</td>
+                        <td>{z.active ? 'Yes' : 'No'}</td>
                       </tr>
                     ))}
                   </tbody>

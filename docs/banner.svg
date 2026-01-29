@@ -1,0 +1,21 @@
+<svg width="1600" height="420" viewBox="0 0 1600 420" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFF4D4"/>
+      <stop offset="45%" stop-color="#FDF7EF"/>
+      <stop offset="100%" stop-color="#D8FFF3"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#58A7A7"/>
+      <stop offset="100%" stop-color="#2F7F7F"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="420" fill="url(#bg)"/>
+  <circle cx="1300" cy="120" r="130" fill="#58A7A7" fill-opacity="0.18"/>
+  <circle cx="260" cy="320" r="180" fill="#2F7F7F" fill-opacity="0.12"/>
+  <rect x="120" y="120" width="1360" height="180" rx="28" fill="white" opacity="0.9"/>
+  <rect x="120" y="120" width="1360" height="180" rx="28" fill="none" stroke="#0F172A" stroke-opacity="0.08"/>
+  <text x="180" y="220" font-family="Georgia, serif" font-size="64" font-weight="700" fill="#0F172A">Petshop Bento</text>
+  <text x="180" y="265" font-family="Arial, sans-serif" font-size="24" fill="#0F172A" opacity="0.8">Cat Products • Grooming • Vet Schedule • Delivery • Midtrans</text>
+  <rect x="1120" y="210" width="280" height="12" rx="6" fill="url(#accent)"/>
+</svg>

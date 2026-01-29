@@ -1,6 +1,6 @@
 ﻿# Petshop Bento
 
-![Petshop Bento Banner](https://images.unsplash.com/photo-1519052537078-e6302a4968d4?auto=format&fit=crop&w=1600&q=80)
+![Petshop Bento Banner](docs/banner.svg)
 
 [![Go](https://img.shields.io/badge/Go-1.22-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 [![Java](https://img.shields.io/badge/Java-21-ED8B00?logo=openjdk&logoColor=white)](https://adoptium.net/)
@@ -20,6 +20,7 @@ Full-stack petshop platform for cat products, services, and vet scheduling in In
 | Membership | Register/login, tiers (Bronze/Silver/Gold/Platinum), automatic tier upgrades |
 | Rewards | Tier-based discounts, cashback wallet, vouchers, welcome voucher |
 | Payments | Midtrans Snap payment, status checking, webhook updates |
+| Delivery | Flat zone fee, per-km fee (distance), external shipping provider |
 | Admin | Products, schedules, appointments, bookings, members, vouchers, staff management |
 | Analytics | Member spend ranking, order list with status controls |
 
@@ -103,6 +104,24 @@ http://localhost:8081/webhooks/midtrans
 ```
 Make sure `CORE_WEBHOOK_SECRET` matches on both services.
 
+## Delivery Options
+
+Supported delivery modes:
+1) **Flat fee by zone** (admin-managed zones)
+2) **Per-km fee** (Haversine distance from store coordinates)
+3) **External shipping provider** (via env config)
+
+Use `POST /delivery/quote` to calculate shipping fee before checkout.
+
+### External Provider (Placeholder)
+Default provider: **Shipper** (placeholder integration). Set in `.env`:
+- `EXTERNAL_SHIPPING_PROVIDER=shipper`
+- `SHIPPER_API_KEY`
+- `SHIPPER_API_BASE_URL`
+- `SHIPPER_PICKUP_*` values
+
+When configured, the code currently returns a mocked fee and message. Replace the placeholder in `services/core-go/delivery.go` with real Shipper API calls when ready.
+
 ## Configuration
 
 Key environment variables:
@@ -110,6 +129,7 @@ Key environment variables:
 - `BOOKING_DB_URL`, `BOOKING_DB_USER`, `BOOKING_DB_PASS`, `BOOKING_PORT`
 - `MIDTRANS_SERVER_KEY`, `MIDTRANS_SNAP_URL`, `MIDTRANS_STATUS_URL`
 - `ADMIN_BOOTSTRAP_SECRET`, `CORE_WEBHOOK_SECRET`, `BOOKING_ADMIN_SECRET`
+- `EXTERNAL_SHIPPING_PROVIDER`, `EXTERNAL_SHIPPING_URL`, `EXTERNAL_SHIPPING_KEY`
 
 ## API Overview
 

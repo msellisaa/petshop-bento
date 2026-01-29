@@ -2,8 +2,8 @@
   --ink: #1a1a1a;
   --sand: #f3efe7;
   --cream: #fdf7ef;
-  --amber: #ff9f1c;
-  --teal: #0f766e;
+  --amber: #58a7a7;
+  --teal: #2f7f7f;
   --coral: #ff6b6b;
   --night: #0f172a;
   --line: rgba(15, 23, 42, 0.12);
@@ -188,6 +188,22 @@ input {
   border-radius: 10px;
   border: 1px solid var(--line);
   font-family: inherit;
+}
+
+select {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  font-family: inherit;
+}
+
+.delivery-box {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px dashed var(--line);
 }
 
 .cart-list {

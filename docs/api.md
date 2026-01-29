@@ -15,6 +15,10 @@ Auth:
 - GET /cart
 - POST /orders
   - body supports `voucher_code` and `wallet_use` (cashback amount)
+- GET /delivery/zones
+- POST /delivery/quote
+  - body: `{ type: "zone|per_km|external", zone_id, lat, lng, distance_km }`
+  - external provider response may include `message` when in placeholder mode
 - POST /auth/register
 - POST /auth/login
 - POST /admin/login
@@ -31,6 +35,10 @@ Auth:
 - GET /admin/orders
 - PUT /admin/orders/{id}/status
 - POST /webhooks/midtrans
+- GET /admin/delivery/zones
+- POST /admin/delivery/zones
+- GET /admin/delivery/settings
+- PUT /admin/delivery/settings
 
 ## Booking API (Java)
 Base URL: http://localhost:8082
