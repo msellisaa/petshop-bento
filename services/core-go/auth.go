@@ -33,15 +33,30 @@ func registerHandler(db *sql.DB) http.HandlerFunc {
       return
     }
     email := strings.ToLower(strings.TrimSpace(req.Email))
-    if req.Name == "" || email == "" || req.Phone == "" || req.Password == "" {
-      writeJSON(w, http.StatusBadRequest, errMsg("name, email, phone, password required"))
+    username := strings.ToLower(strings.TrimSpace(req.Username))
+    phone := normalizePhone(req.Phone)
+    if req.Name == "" || username == "" || req.Password == "" {
+      writeJSON(w, http.StatusBadRequest, errMsg("name, username, password required"))
+      return
+    }
+    if email == "" && phone == "" {
+      writeJSON(w, http.StatusBadRequest, errMsg("email or phone required"))
+      return
+    }
+    if err := validateUsername(username); err != nil {
+      writeJSON(w, http.StatusBadRequest, errMsg(err.Error()))
       return
     }
     if strings.TrimSpace(req.OtpToken) == "" {
       writeJSON(w, http.StatusBadRequest, errMsg("otp_token required"))
       return
     }
-    if ok := consumeOtpToken(db, email, "register", req.OtpToken); !ok {
+    dest, channel, derr := otpDestination(email, phone, req.OtpChannel)
+    if derr != nil {
+      writeJSON(w, http.StatusBadRequest, errMsg(derr.Error()))
+      return
+    }
+    if ok := consumeOtpToken(db, dest, channel, "register", req.OtpToken); !ok {
       writeJSON(w, http.StatusUnauthorized, errMsg("invalid otp"))
       return
     }
@@ -52,10 +67,17 @@ func registerHandler(db *sql.DB) http.HandlerFunc {
     }
 
     var userID string
-    err = db.QueryRow(`INSERT INTO users (name, email, phone, password_hash, auth_provider) VALUES ($1,$2,$3,$4,'password') RETURNING id`,
-      req.Name, email, req.Phone, string(hash)).Scan(&userID)
+    avatar := strings.TrimSpace(req.AvatarURL)
+    emailVerified := channel == "email"
+    phoneVerified := channel == "whatsapp" || channel == "sms"
+    err = db.QueryRow(
+      `INSERT INTO users (name, username, email, phone, password_hash, auth_provider, avatar_url, email_verified_at, phone_verified_at)
+       VALUES ($1,$2,$3,$4,$5,'password',$6,CASE WHEN $7 THEN NOW() ELSE NULL END,CASE WHEN $8 THEN NOW() ELSE NULL END)
+       RETURNING id`,
+      req.Name, username, nullIfEmpty(email), nullIfEmpty(phone), string(hash), nullIfEmpty(avatar), emailVerified, phoneVerified,
+    ).Scan(&userID)
     if err != nil {
-      writeJSON(w, http.StatusBadRequest, errMsg("email already used"))
+      writeJSON(w, http.StatusBadRequest, errMsg("username or email already used"))
       return
     }
     _, _ = db.Exec(`INSERT INTO user_vouchers (user_id, code) VALUES ($1,$2)`, userID, "WELCOME50")
@@ -74,12 +96,20 @@ func loginHandler(db *sql.DB) http.HandlerFunc {
       writeJSON(w, http.StatusBadRequest, errMsg("invalid json"))
       return
     }
-    var id, hash, name, phone, tier, role string
+    identifier := strings.TrimSpace(req.Email)
+    if identifier == "" || strings.TrimSpace(req.Password) == "" {
+      writeJSON(w, http.StatusBadRequest, errMsg("identifier and password required"))
+      return
+    }
+    email := strings.ToLower(identifier)
+    phone := normalizePhone(identifier)
+    var id, hash, name, tier, role, username string
+    var dbPhone, dbEmail, avatar sql.NullString
     var isAdmin bool
     var totalSpend, wallet int
-    email := strings.ToLower(strings.TrimSpace(req.Email))
-    err := db.QueryRow(`SELECT id, password_hash, name, phone, tier, total_spend, wallet_balance, is_admin, role FROM users WHERE email = $1`, email).
-      Scan(&id, &hash, &name, &phone, &tier, &totalSpend, &wallet, &isAdmin, &role)
+    err := db.QueryRow(`SELECT id, password_hash, name, phone, tier, total_spend, wallet_balance, is_admin, role, email, username, avatar_url FROM users WHERE email = $1 OR phone = $2`,
+      email, phone).
+      Scan(&id, &hash, &name, &dbPhone, &tier, &totalSpend, &wallet, &isAdmin, &role, &dbEmail, &username, &avatar)
     if err != nil {
       writeJSON(w, http.StatusUnauthorized, errMsg("invalid credentials"))
       return
@@ -101,8 +131,10 @@ func loginHandler(db *sql.DB) http.HandlerFunc {
       "user": map[string]any{
         "id": id,
         "name": name,
-        "email": email,
-        "phone": phone,
+        "email": dbEmail.String,
+        "phone": dbPhone.String,
+        "username": username,
+        "avatar_url": avatar.String,
         "tier": tier,
         "total_spend": totalSpend,
         "wallet_balance": wallet,
@@ -125,11 +157,8 @@ func otpRequestHandler(db *sql.DB) http.HandlerFunc {
       return
     }
     email := strings.ToLower(strings.TrimSpace(req.Email))
+    phone := normalizePhone(req.Phone)
     purpose := strings.ToLower(strings.TrimSpace(req.Purpose))
-    if email == "" {
-      writeJSON(w, http.StatusBadRequest, errMsg("email required"))
-      return
-    }
     if purpose == "" {
       purpose = "register"
     }
@@ -137,22 +166,26 @@ func otpRequestHandler(db *sql.DB) http.HandlerFunc {
       writeJSON(w, http.StatusBadRequest, errMsg("invalid purpose"))
       return
     }
+    dest, channel, derr := otpDestination(email, phone, req.Channel)
+    if derr != nil {
+      writeJSON(w, http.StatusBadRequest, errMsg(derr.Error()))
+      return
+    }
 
     code := generateOTPCode()
     expiresAt := time.Now().Add(5 * time.Minute)
-    _, err := db.Exec(`INSERT INTO otp_requests (email, purpose, code, expires_at) VALUES ($1,$2,$3,$4)`,
-      email, purpose, code, expiresAt)
+    _, err := db.Exec(`INSERT INTO otp_requests (destination, channel, purpose, code, expires_at) VALUES ($1,$2,$3,$4,$5)`,
+      dest, channel, purpose, code, expiresAt)
     if err != nil {
       writeJSON(w, http.StatusInternalServerError, errMsg("otp request failed"))
       return
     }
 
-    if smtpEnabled() {
-      if err := sendOtpEmail(email, code); err != nil {
-        writeJSON(w, http.StatusInternalServerError, errMsg("otp delivery failed"))
-        return
-      }
+    if err := deliverOtp(channel, dest, code); err == nil {
       writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+      return
+    } else if !isOtpDeliveryNotConfigured(err) {
+      writeJSON(w, http.StatusInternalServerError, errMsg("otp delivery failed"))
       return
     }
 
@@ -177,12 +210,9 @@ func otpVerifyHandler(db *sql.DB) http.HandlerFunc {
       return
     }
     email := strings.ToLower(strings.TrimSpace(req.Email))
+    phone := normalizePhone(req.Phone)
     purpose := strings.ToLower(strings.TrimSpace(req.Purpose))
     code := strings.TrimSpace(req.Code)
-    if email == "" || code == "" {
-      writeJSON(w, http.StatusBadRequest, errMsg("email and code required"))
-      return
-    }
     if purpose == "" {
       purpose = "register"
     }
@@ -190,10 +220,19 @@ func otpVerifyHandler(db *sql.DB) http.HandlerFunc {
       writeJSON(w, http.StatusBadRequest, errMsg("invalid purpose"))
       return
     }
+    dest, channel, derr := otpDestination(email, phone, req.Channel)
+    if derr != nil {
+      writeJSON(w, http.StatusBadRequest, errMsg(derr.Error()))
+      return
+    }
+    if code == "" {
+      writeJSON(w, http.StatusBadRequest, errMsg("code required"))
+      return
+    }
 
     var reqID string
-    err := db.QueryRow(`SELECT id FROM otp_requests WHERE email = $1 AND purpose = $2 AND code = $3 AND verified_at IS NULL AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1`,
-      email, purpose, code).Scan(&reqID)
+    err := db.QueryRow(`SELECT id FROM otp_requests WHERE destination = $1 AND channel = $2 AND purpose = $3 AND code = $4 AND verified_at IS NULL AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1`,
+      dest, channel, purpose, code).Scan(&reqID)
     if err != nil {
       writeJSON(w, http.StatusUnauthorized, errMsg("invalid otp"))
       return
@@ -201,8 +240,8 @@ func otpVerifyHandler(db *sql.DB) http.HandlerFunc {
     _, _ = db.Exec(`UPDATE otp_requests SET verified_at = NOW() WHERE id = $1`, reqID)
 
     token := generateToken()
-    _, err = db.Exec(`INSERT INTO otp_tokens (token, email, purpose, expires_at) VALUES ($1,$2,$3,$4)`,
-      token, email, purpose, time.Now().Add(10*time.Minute))
+    _, err = db.Exec(`INSERT INTO otp_tokens (token, destination, channel, purpose, expires_at) VALUES ($1,$2,$3,$4,$5)`,
+      token, dest, channel, purpose, time.Now().Add(10*time.Minute))
     if err != nil {
       writeJSON(w, http.StatusInternalServerError, errMsg("otp verify failed"))
       return
@@ -224,21 +263,27 @@ func googleLoginHandler(db *sql.DB) http.HandlerFunc {
     }
     email := strings.ToLower(strings.TrimSpace(req.Email))
     name := strings.TrimSpace(req.Name)
-    phone := strings.TrimSpace(req.Phone)
+    phone := normalizePhone(req.Phone)
     googleID := strings.TrimSpace(req.GoogleID)
     if email == "" || googleID == "" {
       writeJSON(w, http.StatusBadRequest, errMsg("email and google_id required"))
       return
     }
 
-    var id, dbName, dbEmail, dbPhone, tier, role string
+    var id, dbName, dbEmail, tier, role, username string
+    var dbPhone, avatar sql.NullString
     var isAdmin bool
     var totalSpend, wallet int
-    err := db.QueryRow(`SELECT id, name, email, phone, tier, total_spend, wallet_balance, is_admin, role FROM users WHERE email = $1 OR google_id = $2`,
-      email, googleID).Scan(&id, &dbName, &dbEmail, &dbPhone, &tier, &totalSpend, &wallet, &isAdmin, &role)
+    err := db.QueryRow(`SELECT id, name, email, phone, tier, total_spend, wallet_balance, is_admin, role, username, avatar_url FROM users WHERE email = $1 OR google_id = $2`,
+      email, googleID).Scan(&id, &dbName, &dbEmail, &dbPhone, &tier, &totalSpend, &wallet, &isAdmin, &role, &username, &avatar)
     if err == sql.ErrNoRows {
-      if name == "" || phone == "" {
-        writeJSON(w, http.StatusBadRequest, errMsg("name and phone required for registration"))
+      if name == "" {
+        writeJSON(w, http.StatusBadRequest, errMsg("name required for registration"))
+        return
+      }
+      username, err := generateUsernameFromEmail(db, email)
+      if err != nil {
+        writeJSON(w, http.StatusInternalServerError, errMsg("username generate failed"))
         return
       }
       tempPass := generateToken()
@@ -247,15 +292,16 @@ func googleLoginHandler(db *sql.DB) http.HandlerFunc {
         writeJSON(w, http.StatusInternalServerError, errMsg("hash failed"))
         return
       }
-      err = db.QueryRow(`INSERT INTO users (name, email, phone, password_hash, google_id, auth_provider) VALUES ($1,$2,$3,$4,$5,'google') RETURNING id`,
-        name, email, phone, string(hash), googleID).Scan(&id)
+      err = db.QueryRow(`INSERT INTO users (name, username, email, phone, password_hash, google_id, auth_provider, email_verified_at) VALUES ($1,$2,$3,$4,$5,$6,'google',NOW()) RETURNING id`,
+        name, username, email, nullIfEmpty(phone), string(hash), googleID).Scan(&id)
       if err != nil {
         writeJSON(w, http.StatusBadRequest, errMsg("create user failed"))
         return
       }
       dbName = name
       dbEmail = email
-      dbPhone = phone
+      dbPhone = sql.NullString{String: phone, Valid: phone != ""}
+      avatar = sql.NullString{}
       tier = "Bronze"
       totalSpend = 0
       wallet = 0
@@ -280,7 +326,9 @@ func googleLoginHandler(db *sql.DB) http.HandlerFunc {
         "id": id,
         "name": dbName,
         "email": dbEmail,
-        "phone": dbPhone,
+        "phone": dbPhone.String,
+        "username": username,
+        "avatar_url": avatar.String,
         "tier": tier,
         "total_spend": totalSpend,
         "wallet_balance": wallet,
@@ -372,8 +420,13 @@ func adminBootstrapHandler(db *sql.DB) http.HandlerFunc {
       return
     }
     var userID string
-    err = db.QueryRow(`INSERT INTO users (name, email, phone, password_hash, is_admin, role) VALUES ($1,$2,$3,$4,TRUE,'owner') RETURNING id`,
-      req.Name, email, req.Phone, string(hash)).Scan(&userID)
+    username, err := generateUsernameFromEmail(db, email)
+    if err != nil {
+      writeJSON(w, http.StatusInternalServerError, errMsg("username generate failed"))
+      return
+    }
+    err = db.QueryRow(`INSERT INTO users (name, username, email, phone, password_hash, is_admin, role) VALUES ($1,$2,$3,$4,$5,TRUE,'owner') RETURNING id`,
+      req.Name, username, email, nullIfEmpty(normalizePhone(req.Phone)), string(hash)).Scan(&userID)
     if err != nil {
       writeJSON(w, http.StatusBadRequest, errMsg("admin create failed"))
       return
@@ -409,10 +462,11 @@ func meHandler(db *sql.DB) http.HandlerFunc {
       writeJSON(w, http.StatusUnauthorized, errMsg("unauthorized"))
       return
     }
-    var name, email, phone, tier string
+    var name, tier, username string
+    var email, phone, avatar sql.NullString
     var totalSpend, wallet int
-    err = db.QueryRow(`SELECT name, email, phone, tier, total_spend, wallet_balance FROM users WHERE id = $1`, userID).
-      Scan(&name, &email, &phone, &tier, &totalSpend, &wallet)
+    err = db.QueryRow(`SELECT name, email, phone, tier, total_spend, wallet_balance, username, avatar_url FROM users WHERE id = $1`, userID).
+      Scan(&name, &email, &phone, &tier, &totalSpend, &wallet, &username, &avatar)
     if err != nil {
       writeJSON(w, http.StatusInternalServerError, errMsg("not found"))
       return
@@ -420,12 +474,65 @@ func meHandler(db *sql.DB) http.HandlerFunc {
     writeJSON(w, http.StatusOK, map[string]any{
       "id": userID,
       "name": name,
-      "email": email,
-      "phone": phone,
+      "email": email.String,
+      "phone": phone.String,
+      "username": username,
+      "avatar_url": avatar.String,
       "tier": tier,
       "total_spend": totalSpend,
       "wallet_balance": wallet,
     })
+  }
+}
+
+func profileUpdateHandler(db *sql.DB) http.HandlerFunc {
+  return func(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodPut {
+      writeJSON(w, http.StatusMethodNotAllowed, errMsg("method not allowed"))
+      return
+    }
+    userID, err := getUserIDFromToken(db, r)
+    if err != nil {
+      writeJSON(w, http.StatusUnauthorized, errMsg("unauthorized"))
+      return
+    }
+    var req ProfileUpdateRequest
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+      writeJSON(w, http.StatusBadRequest, errMsg("invalid json"))
+      return
+    }
+    name := strings.TrimSpace(req.Name)
+    avatar := strings.TrimSpace(req.AvatarURL)
+    username := strings.ToLower(strings.TrimSpace(req.Username))
+
+    var currentUsername string
+    var createdAt time.Time
+    err = db.QueryRow(`SELECT username, created_at FROM users WHERE id = $1`, userID).Scan(&currentUsername, &createdAt)
+    if err != nil {
+      writeJSON(w, http.StatusInternalServerError, errMsg("not found"))
+      return
+    }
+
+    if username != "" && username != currentUsername {
+      if err := validateUsername(username); err != nil {
+        writeJSON(w, http.StatusBadRequest, errMsg(err.Error()))
+        return
+      }
+      if time.Now().After(createdAt.Add(30 * 24 * time.Hour)) {
+        writeJSON(w, http.StatusBadRequest, errMsg("username change window expired"))
+        return
+      }
+    } else if username == "" {
+      username = currentUsername
+    }
+
+    _, err = db.Exec(`UPDATE users SET name = COALESCE($1,name), username = $2, avatar_url = COALESCE($3,avatar_url) WHERE id = $4`,
+      nullIfEmpty(name), username, nullIfEmpty(avatar), userID)
+    if err != nil {
+      writeJSON(w, http.StatusBadRequest, errMsg("update failed"))
+      return
+    }
+    writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
   }
 }
 
@@ -530,7 +637,8 @@ func membersHandler(db *sql.DB) http.HandlerFunc {
 
     out := []map[string]any{}
     for rows.Next() {
-      var id, name, email, phone, tier, createdAt string
+      var id, name, tier, createdAt string
+      var email, phone sql.NullString
       var totalSpend, wallet int
       if err := rows.Scan(&id, &name, &email, &phone, &tier, &totalSpend, &wallet, &createdAt); err != nil {
         writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
@@ -539,8 +647,8 @@ func membersHandler(db *sql.DB) http.HandlerFunc {
       out = append(out, map[string]any{
         "id": id,
         "name": name,
-        "email": email,
-        "phone": phone,
+        "email": email.String,
+        "phone": phone.String,
         "tier": tier,
         "total_spend": totalSpend,
         "wallet_balance": wallet,
@@ -761,14 +869,19 @@ func adminStaffHandler(db *sql.DB) http.HandlerFunc {
         writeJSON(w, http.StatusBadRequest, errMsg("name, email, phone, password required"))
         return
       }
+      username, err := generateUsernameFromEmail(db, email)
+      if err != nil {
+        writeJSON(w, http.StatusInternalServerError, errMsg("username generate failed"))
+        return
+      }
       hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
       if err != nil {
         writeJSON(w, http.StatusInternalServerError, errMsg("hash failed"))
         return
       }
       var userID string
-      err = db.QueryRow(`INSERT INTO users (name, email, phone, password_hash, is_admin, role) VALUES ($1,$2,$3,$4,TRUE,$5) RETURNING id`,
-        req.Name, email, req.Phone, string(hash), role).Scan(&userID)
+      err = db.QueryRow(`INSERT INTO users (name, username, email, phone, password_hash, is_admin, role) VALUES ($1,$2,$3,$4,$5,TRUE,$6) RETURNING id`,
+        req.Name, username, email, nullIfEmpty(normalizePhone(req.Phone)), string(hash), role).Scan(&userID)
       if err != nil {
         writeJSON(w, http.StatusBadRequest, errMsg("create staff failed"))
         return
@@ -879,16 +992,17 @@ func generateOTPCode() string {
   return fmt.Sprintf("%06d", n%1000000)
 }
 
-func consumeOtpToken(db *sql.DB, email string, purpose string, token string) bool {
-  email = strings.ToLower(strings.TrimSpace(email))
+func consumeOtpToken(db *sql.DB, destination string, channel string, purpose string, token string) bool {
+  destination = strings.TrimSpace(destination)
+  channel = strings.ToLower(strings.TrimSpace(channel))
   purpose = strings.ToLower(strings.TrimSpace(purpose))
   token = strings.TrimSpace(token)
-  if email == "" || purpose == "" || token == "" {
+  if destination == "" || channel == "" || purpose == "" || token == "" {
     return false
   }
   var used bool
-  err := db.QueryRow(`SELECT used FROM otp_tokens WHERE token = $1 AND email = $2 AND purpose = $3 AND expires_at > NOW()`,
-    token, email, purpose).Scan(&used)
+  err := db.QueryRow(`SELECT used FROM otp_tokens WHERE token = $1 AND destination = $2 AND channel = $3 AND purpose = $4 AND expires_at > NOW()`,
+    token, destination, channel, purpose).Scan(&used)
   if err != nil || used {
     return false
   }

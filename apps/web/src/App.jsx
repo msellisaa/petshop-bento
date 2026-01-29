@@ -17,11 +17,15 @@ export default function App() {
   const [myVouchers, setMyVouchers] = useState([])
   const [myOrders, setMyOrders] = useState([])
   const [loginForm, setLoginForm] = useState({ email: '', password: '' })
-  const [registerForm, setRegisterForm] = useState({ name: '', email: '', phone: '', password: '' })
+  const [registerForm, setRegisterForm] = useState({ name: '', username: '', email: '', phone: '', password: '', avatar_url: '' })
+  const [registerMethod, setRegisterMethod] = useState('email')
+  const [avatarStatus, setAvatarStatus] = useState('')
   const [otpState, setOtpState] = useState({ code: '', token: '', message: '', sent: false, verified: false })
   const [googleForm, setGoogleForm] = useState({ email: '', name: '', phone: '', google_id: '' })
   const [googleStatus, setGoogleStatus] = useState('')
   const [googleConsent, setGoogleConsent] = useState(false)
+  const [profileForm, setProfileForm] = useState({ name: '', username: '', avatar_url: '' })
+  const [profileStatus, setProfileStatus] = useState('')
   const [checkout, setCheckout] = useState({ name: '', phone: '', address: '', voucher_code: '', wallet_use: 0 })
   const [deliveryType, setDeliveryType] = useState('zone')
   const [deliveryInput, setDeliveryInput] = useState({ zone_id: '', lat: '', lng: '', distance_km: '' })
@@ -55,6 +59,15 @@ export default function App() {
         if (Array.isArray(data)) setMyOrders(data)
       })
   }, [token])
+
+  useEffect(() => {
+    if (!user) return
+    setProfileForm({
+      name: user.name || '',
+      username: user.username || '',
+      avatar_url: user.avatar_url || ''
+    })
+  }, [user])
 
   const subtotal = useMemo(() => cartItems.reduce((acc, item) => acc + item.price * item.qty, 0), [cartItems])
 
@@ -97,14 +110,28 @@ export default function App() {
       setOtpState({ ...otpState, message: 'OTP belum diverifikasi.' })
       return
     }
+    const channel = registerMethod === 'email' ? 'email' : registerMethod
+    const payload = {
+      name: registerForm.name,
+      username: registerForm.username,
+      password: registerForm.password,
+      avatar_url: registerForm.avatar_url,
+      otp_token: otpState.token,
+      otp_channel: channel
+    }
+    if (registerMethod !== 'email') {
+      payload.phone = registerForm.phone
+    } else {
+      payload.email = registerForm.email
+    }
     const resp = await fetch(`${CORE_API}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...registerForm, otp_token: otpState.token })
+      body: JSON.stringify(payload)
     })
     const data = await resp.json()
     if (data.user_id) {
-      setRegisterForm({ name: '', email: '', phone: '', password: '' })
+      setRegisterForm({ name: '', username: '', email: '', phone: '', password: '', avatar_url: '' })
       setOtpState({ code: '', token: '', message: 'Registrasi berhasil.', sent: false, verified: false })
     } else if (data.error) {
       setOtpState({ ...otpState, message: data.error })
@@ -112,14 +139,24 @@ export default function App() {
   }
 
   const requestOtp = async () => {
-    if (!registerForm.email) {
+    if (registerMethod !== 'email' && !registerForm.phone) {
+      setOtpState({ ...otpState, message: 'Nomor WhatsApp/SMS wajib diisi sebelum OTP.' })
+      return
+    }
+    if (registerMethod === 'email' && !registerForm.email) {
       setOtpState({ ...otpState, message: 'Email wajib diisi sebelum OTP.' })
       return
     }
+    const channel = registerMethod === 'email' ? 'email' : registerMethod
     const resp = await fetch(`${CORE_API}/auth/otp/request`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: registerForm.email, purpose: 'register' })
+      body: JSON.stringify({
+        email: registerMethod === 'email' ? registerForm.email : '',
+        phone: registerMethod !== 'email' ? registerForm.phone : '',
+        channel,
+        purpose: 'register'
+      })
     })
     const data = await resp.json()
     if (data.error) {
@@ -131,14 +168,21 @@ export default function App() {
   }
 
   const verifyOtp = async () => {
-    if (!registerForm.email || !otpState.code) {
-      setOtpState({ ...otpState, message: 'Email dan kode OTP wajib diisi.' })
+    if (!otpState.code) {
+      setOtpState({ ...otpState, message: 'Kode OTP wajib diisi.' })
       return
     }
+    const channel = registerMethod === 'email' ? 'email' : registerMethod
     const resp = await fetch(`${CORE_API}/auth/otp/verify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: registerForm.email, purpose: 'register', code: otpState.code })
+      body: JSON.stringify({
+        email: registerMethod === 'email' ? registerForm.email : '',
+        phone: registerMethod !== 'email' ? registerForm.phone : '',
+        channel,
+        purpose: 'register',
+        code: otpState.code
+      })
     })
     const data = await resp.json()
     if (data.otp_token) {
@@ -174,6 +218,61 @@ export default function App() {
     } else {
       setGoogleStatus(data.error || 'Login Google gagal.')
     }
+  }
+
+  const uploadAvatar = async (file) => {
+    if (!file) return
+    setAvatarStatus('Mengunggah foto...')
+    const body = new FormData()
+    body.append('avatar', file)
+    const resp = await fetch(`${CORE_API}/uploads/avatar`, {
+      method: 'POST',
+      body
+    })
+    const data = await resp.json()
+    if (data.avatar_url) {
+      setRegisterForm({ ...registerForm, avatar_url: data.avatar_url })
+      setAvatarStatus('Foto profil terunggah.')
+    } else {
+      setAvatarStatus(data.error || 'Upload gagal.')
+    }
+  }
+
+  const uploadProfileAvatar = async (file) => {
+    if (!file) return
+    setProfileStatus('Mengunggah foto...')
+    const body = new FormData()
+    body.append('avatar', file)
+    const resp = await fetch(`${CORE_API}/uploads/avatar`, {
+      method: 'POST',
+      body
+    })
+    const data = await resp.json()
+    if (data.avatar_url) {
+      setProfileForm({ ...profileForm, avatar_url: data.avatar_url })
+      setProfileStatus('Foto profil terunggah.')
+    } else {
+      setProfileStatus(data.error || 'Upload gagal.')
+    }
+  }
+
+  const saveProfile = async (e) => {
+    e.preventDefault()
+    if (!token) return
+    setProfileStatus('')
+    const resp = await fetch(`${CORE_API}/me/profile`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Auth-Token': token },
+      body: JSON.stringify(profileForm)
+    })
+    const data = await resp.json()
+    if (data.error) {
+      setProfileStatus(data.error)
+      return
+    }
+    setProfileStatus('Profil tersimpan.')
+    const refreshed = await fetch(`${CORE_API}/me`, { headers: { 'X-Auth-Token': token } }).then(r => r.json())
+    if (!refreshed.error) setUser(refreshed)
   }
 
   const submitOrder = async (e) => {
@@ -529,6 +628,8 @@ export default function App() {
             {user ? (
               <div className="member-info">
                 <p><strong>{user.name}</strong> ({user.tier})</p>
+                {user.username && <p>Username: {user.username}</p>}
+                {user.avatar_url && <img className="avatar" src={user.avatar_url} alt="Avatar" />}
                 <p>Total belanja: {rupiah(user.total_spend)}</p>
                 <p>Saldo cashback: {rupiah(user.wallet_balance)}</p>
                 {myVouchers.length > 0 && (
@@ -541,6 +642,15 @@ export default function App() {
                     </ul>
                   </div>
                 )}
+                <form className="form-grid" onSubmit={saveProfile}>
+                  <input placeholder="Nama" value={profileForm.name} onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })} />
+                  <input placeholder="Username" value={profileForm.username} onChange={(e) => setProfileForm({ ...profileForm, username: e.target.value })} />
+                  <input type="file" accept="image/*" onChange={(e) => uploadProfileAvatar(e.target.files?.[0])} />
+                  {profileForm.avatar_url && <small>Foto tersimpan: {profileForm.avatar_url}</small>}
+                  <small>Username bisa diubah selama 30 hari sejak daftar.</small>
+                  {profileStatus && <small>{profileStatus}</small>}
+                  <button className="btn outline" type="submit">Simpan Profil</button>
+                </form>
                 <button className="btn outline" onClick={logout}>Keluar</button>
               </div>
             ) : (
@@ -569,7 +679,7 @@ export default function App() {
             <div className="auth-block">
               <h3>Login Member</h3>
               <form className="form-grid" onSubmit={submitLogin}>
-                <input placeholder="Email" value={loginForm.email} onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })} />
+                <input placeholder="Email atau No. WhatsApp" value={loginForm.email} onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })} />
                 <input placeholder="Password" type="password" value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} />
                 <button className="btn">Masuk</button>
               </form>
@@ -578,13 +688,32 @@ export default function App() {
               <h3>Daftar Member Baru</h3>
               <form className="form-grid" onSubmit={submitRegister}>
                 <input placeholder="Nama" value={registerForm.name} onChange={(e) => setRegisterForm({ ...registerForm, name: e.target.value })} />
-                <input placeholder="Email" value={registerForm.email} onChange={(e) => {
-                  const email = e.target.value
-                  setRegisterForm({ ...registerForm, email })
-                  setOtpState({ ...otpState, token: '', verified: false, sent: false, message: '' })
-                }} />
-                <input placeholder="Telepon" value={registerForm.phone} onChange={(e) => setRegisterForm({ ...registerForm, phone: e.target.value })} />
+                <input placeholder="Username" value={registerForm.username} onChange={(e) => setRegisterForm({ ...registerForm, username: e.target.value })} />
+                <select value={registerMethod} onChange={(e) => {
+                  setRegisterMethod(e.target.value)
+                  setOtpState({ code: '', token: '', message: '', sent: false, verified: false })
+                }}>
+                  <option value="email">Daftar via Email</option>
+                  <option value="whatsapp">Daftar via WhatsApp</option>
+                  <option value="sms">Daftar via SMS</option>
+                </select>
+                {registerMethod === 'email' ? (
+                  <input placeholder="Email" value={registerForm.email} onChange={(e) => {
+                    const email = e.target.value
+                    setRegisterForm({ ...registerForm, email })
+                    setOtpState({ ...otpState, token: '', verified: false, sent: false, message: '' })
+                  }} />
+                ) : (
+                  <input placeholder="Nomor WhatsApp/SMS" value={registerForm.phone} onChange={(e) => {
+                    const phone = e.target.value
+                    setRegisterForm({ ...registerForm, phone })
+                    setOtpState({ ...otpState, token: '', verified: false, sent: false, message: '' })
+                  }} />
+                )}
                 <input placeholder="Password" type="password" value={registerForm.password} onChange={(e) => setRegisterForm({ ...registerForm, password: e.target.value })} />
+                <input type="file" accept="image/*" onChange={(e) => uploadAvatar(e.target.files?.[0])} />
+                {registerForm.avatar_url && <small>Foto tersimpan: {registerForm.avatar_url}</small>}
+                {avatarStatus && <small>{avatarStatus}</small>}
                 <button className="btn outline" type="button" onClick={requestOtp}>Kirim OTP</button>
                 <input placeholder="Kode OTP" value={otpState.code} onChange={(e) => setOtpState({ ...otpState, code: e.target.value })} />
                 <button className="btn outline" type="button" onClick={verifyOtp}>Verifikasi OTP</button>

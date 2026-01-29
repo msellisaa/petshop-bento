@@ -32,16 +32,20 @@ CREATE TABLE cart_items (
 CREATE TABLE users (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT NOT NULL,
-  email TEXT UNIQUE NOT NULL,
-  phone TEXT NOT NULL,
+  username TEXT UNIQUE NOT NULL,
+  email TEXT UNIQUE,
+  phone TEXT,
   password_hash TEXT NOT NULL,
   google_id TEXT UNIQUE,
   auth_provider TEXT NOT NULL DEFAULT 'password',
+  avatar_url TEXT,
   is_admin BOOLEAN NOT NULL DEFAULT FALSE,
   role TEXT NOT NULL DEFAULT 'member',
   total_spend INT NOT NULL DEFAULT 0,
   tier TEXT NOT NULL DEFAULT 'Bronze',
   wallet_balance INT NOT NULL DEFAULT 0,
+  email_verified_at TIMESTAMP,
+  phone_verified_at TIMESTAMP,
   created_at TIMESTAMP DEFAULT NOW()
 );
 
@@ -54,7 +58,8 @@ CREATE TABLE sessions (
 
 CREATE TABLE otp_requests (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  email TEXT NOT NULL,
+  destination TEXT NOT NULL,
+  channel TEXT NOT NULL,
   purpose TEXT NOT NULL,
   code TEXT NOT NULL,
   expires_at TIMESTAMP NOT NULL,
@@ -64,7 +69,8 @@ CREATE TABLE otp_requests (
 
 CREATE TABLE otp_tokens (
   token TEXT PRIMARY KEY,
-  email TEXT NOT NULL,
+  destination TEXT NOT NULL,
+  channel TEXT NOT NULL,
   purpose TEXT NOT NULL,
   expires_at TIMESTAMP NOT NULL,
   used BOOLEAN NOT NULL DEFAULT FALSE,

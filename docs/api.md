@@ -21,16 +21,23 @@ Auth:
   - external provider response may include `message` when in placeholder mode
 - POST /auth/register
 - POST /auth/login
+  - `email` field accepts email or phone number
 - POST /auth/otp/request
 - POST /auth/otp/verify
 - POST /auth/google/login
-  - OTP via email uses SMTP_* env vars; fallback dev mode uses OTP_ECHO=true
+  - OTP via email uses SMTP_* env vars; WhatsApp uses FONNTE_*; fallback dev mode uses OTP_ECHO=true
+  - OTP request body accepts `email` or `phone` + optional `channel` (email|whatsapp|sms)
+  - SMS delivery requires provider integration (not configured by default)
+  - Register body supports `username` and optional `avatar_url`
+  - Register body supports `otp_channel` (email|whatsapp|sms) to match OTP channel
 - POST /auth/logout
 - POST /admin/login
 - POST /admin/bootstrap
 - GET /admin/staff
 - POST /admin/staff
 - GET /me
+- PUT /me/profile
+  - Username can be updated within 30 days after account creation
 - GET /me/vouchers
 - GET /me/orders
 - GET /vouchers
@@ -42,6 +49,7 @@ Auth:
 - POST /webhooks/midtrans
 - POST /payments/midtrans/snap
 - GET /payments/midtrans/status/{orderId}
+- POST /uploads/avatar
 - GET /admin/delivery/zones
 - POST /admin/delivery/zones
 - GET /admin/delivery/settings
