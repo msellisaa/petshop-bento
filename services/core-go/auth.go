@@ -6,7 +6,9 @@ import (
   "encoding/base64"
   "encoding/json"
   "fmt"
+  "io"
   "net/http"
+  "net/url"
   "os"
   "strconv"
   "strings"
@@ -19,6 +21,14 @@ type TierInfo struct {
   Name         string
   DiscountPct  int
   CashbackPct  int
+}
+
+type googleTokenInfo struct {
+  Email         string `json:"email"`
+  EmailVerified string `json:"email_verified"`
+  Name          string `json:"name"`
+  Sub           string `json:"sub"`
+  Aud           string `json:"aud"`
 }
 
 func registerHandler(db *sql.DB) http.HandlerFunc {
@@ -261,12 +271,21 @@ func googleLoginHandler(db *sql.DB) http.HandlerFunc {
       writeJSON(w, http.StatusBadRequest, errMsg("invalid json"))
       return
     }
-    email := strings.ToLower(strings.TrimSpace(req.Email))
-    name := strings.TrimSpace(req.Name)
+    if strings.TrimSpace(req.IDToken) == "" {
+      writeJSON(w, http.StatusBadRequest, errMsg("id_token required"))
+      return
+    }
+    info, err := verifyGoogleIDToken(req.IDToken)
+    if err != nil {
+      writeJSON(w, http.StatusUnauthorized, errMsg("invalid google token"))
+      return
+    }
+    email := strings.ToLower(strings.TrimSpace(info.Email))
+    name := strings.TrimSpace(info.Name)
     phone := normalizePhone(req.Phone)
-    googleID := strings.TrimSpace(req.GoogleID)
+    googleID := strings.TrimSpace(info.Sub)
     if email == "" || googleID == "" {
-      writeJSON(w, http.StatusBadRequest, errMsg("email and google_id required"))
+      writeJSON(w, http.StatusBadRequest, errMsg("google token missing email"))
       return
     }
 
@@ -337,6 +356,40 @@ func googleLoginHandler(db *sql.DB) http.HandlerFunc {
       },
     })
   }
+}
+
+func verifyGoogleIDToken(idToken string) (*googleTokenInfo, error) {
+  clientID := strings.TrimSpace(os.Getenv("GOOGLE_CLIENT_ID"))
+  if clientID == "" {
+    return nil, fmt.Errorf("google client id not configured")
+  }
+  endpoint := "https://oauth2.googleapis.com/tokeninfo?id_token=" + url.QueryEscape(idToken)
+  resp, err := http.Get(endpoint)
+  if err != nil {
+    return nil, err
+  }
+  defer resp.Body.Close()
+  if resp.StatusCode >= 400 {
+    return nil, fmt.Errorf("tokeninfo error")
+  }
+  body, err := io.ReadAll(resp.Body)
+  if err != nil {
+    return nil, err
+  }
+  var info googleTokenInfo
+  if err := json.Unmarshal(body, &info); err != nil {
+    return nil, err
+  }
+  if info.Aud != clientID {
+    return nil, fmt.Errorf("aud mismatch")
+  }
+  if strings.ToLower(strings.TrimSpace(info.EmailVerified)) != "true" {
+    return nil, fmt.Errorf("email not verified")
+  }
+  if strings.TrimSpace(info.Email) == "" || strings.TrimSpace(info.Sub) == "" {
+    return nil, fmt.Errorf("invalid token info")
+  }
+  return &info, nil
 }
 
 
