@@ -118,8 +118,7 @@ See `docs/api.md` for full endpoints.
 ## Contribution
 
 We welcome contributions. Contributors:
-- M. Sellaisa (Owner)
-- OpenAI Codex (Assistant scaffolding)
+- Msellisaa (Owner)
 
 Want to contribute? Please open an issue or submit a PR with clear description and screenshots if UI changes.
 
