@@ -150,6 +150,13 @@ export default function App() {
     if (data.redirect_url) setSnapUrl(data.redirect_url)
   }
 
+  const checkStatus = async () => {
+    if (!orderInfo) return
+    const resp = await fetch(`${BOOKING_API}/payments/midtrans/status/${orderInfo.order_id}`)
+    const data = await resp.json()
+    setPaymentStatus(data)
+  }
+
   const requestQuote = async () => {
     const payload = {
       type: deliveryType,
@@ -170,13 +177,6 @@ export default function App() {
     }
   }
 
-  const checkStatus = async () => {
-    if (!orderInfo) return
-    const resp = await fetch(`${BOOKING_API}/payments/midtrans/status/${orderInfo.order_id}`)
-    const data = await resp.json()
-    setPaymentStatus(data)
-  }
-
   const logout = () => {
     localStorage.removeItem('auth_token')
     setToken('')
@@ -184,67 +184,237 @@ export default function App() {
   }
 
   return (
-    <div>
-      <header className="container nav">
+    <div className="page">
+      <header className="topbar">
         <div className="brand">Petshop Bento</div>
-        <nav className="nav-links">
+        <nav className="topnav">
           <a href="#produk">Produk</a>
           <a href="#layanan">Layanan</a>
-          <a href="#dokter">Jadwal Dokter</a>
+          <a href="#delivery">Delivery</a>
           <a href="#member">Member</a>
-          <a href="#lokasi">Lokasi</a>
+          <a href="#dokter">Dokter</a>
         </nav>
+        <div className="top-actions">
+          <button className="pill">Chat WhatsApp</button>
+          <button className="pill ghost">Belanja</button>
+        </div>
       </header>
 
-      <section className="container hero">
-        <div>
-          <h1>Semua kebutuhan kucing, dari makanan sampai dokter.</h1>
-          <p>
-            Petshop Bento melayani makanan kucing, obat dan vitamin, minuman, pasir, kandang, tas, serta
-            layanan grooming, penitipan, konsultasi gratis, dan vaksin.
+      <section className="hero">
+        <div className="hero-left">
+          <p className="eyebrow">Petshop khusus kucing - Cikande</p>
+          <h1>Belanja kebutuhan kucing, booking dokter, semua rapi dalam satu tempat.</h1>
+          <p className="lead">
+            Produk lengkap, layanan grooming dan penitipan, konsultasi gratis, plus pembayaran Midtrans.
+            Desain pengalaman belanja yang terasa hangat dan percaya diri.
           </p>
           <div className="cta-row">
-            <button className="btn btn-primary">Belanja Online</button>
-            <button className="btn btn-outline">Booking Layanan</button>
+            <button className="btn primary">Belanja Sekarang</button>
+            <button className="btn outline">Booking Layanan</button>
           </div>
-          <div className="badges">
-            <span className="badge">Pengiriman cepat Cikande dan sekitar</span>
-            <span className="badge">Payment Gateway Midtrans</span>
-            <span className="badge">Konsultasi gratis</span>
+          <div className="meta-row">
+            <div>
+              <strong>4.9/5</strong>
+              <span>rating pelanggan</span>
+            </div>
+            <div>
+              <strong>Same-day</strong>
+              <span>pengiriman lokal</span>
+            </div>
+            <div>
+              <strong>Gratis</strong>
+              <span>konsultasi kucing</span>
+            </div>
           </div>
         </div>
-        <div className="hero-card">
-          <h3>Jam Operasional</h3>
-          <p>Senin - Minggu, 08:00 - 20:00</p>
-          <div className="strip">
-            <span className="chip">+62 896-4385-2920</span>
-            <span className="chip">Jl. Cikande Permai No.11-12 Blok L9</span>
+        <div className="hero-right">
+          <div className="hero-card">
+            <h3>Promo Minggu Ini</h3>
+            <p>Diskon member + cashback otomatis saat checkout.</p>
+            <div className="promo-grid">
+              {promoTiles.map(tile => (
+                <div className="promo" key={tile.title}>
+                  <strong>{tile.title}</strong>
+                  <span>{tile.desc}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="hero-card highlight">
+            <h3>Petshop Bento</h3>
+            <p>Jl. Cikande Permai No.11-12 Blok L9</p>
+            <div className="hero-tags">
+              <span>+62 896-4385-2920</span>
+              <span>08:00 - 20:00</span>
+              <span>Midtrans Ready</span>
+            </div>
           </div>
         </div>
       </section>
 
-      <section id="produk" className="section container">
+      <section className="strip">
+        {valueProps.map((v) => (
+          <div className="strip-item" key={v.title}>
+            <strong>{v.title}</strong>
+            <p>{v.desc}</p>
+          </div>
+        ))}
+      </section>
+
+      <section id="produk" className="section">
         <div className="section-head">
-          <h2>Produk Favorit</h2>
-          <div className="cart-summary">Keranjang: {cartItems.length} item | {rupiah(subtotal)}</div>
+          <div>
+            <h2>Produk Favorit</h2>
+            <p>Pilihan terbaik untuk makanan, vitamin, pasir, kandang, dan aksesori.</p>
+          </div>
+          <div className="cart-chip">
+            Keranjang {cartItems.length} item - {rupiah(subtotal)}
+          </div>
         </div>
-        <div className="grid grid-3">
+        <div className="product-grid">
           {(products.length ? products : demoProducts).map(p => (
-            <div className="card" key={p.id || p.name}>
+            <div className="product-card" key={p.id || p.name}>
+              <div className="product-top">
+                <span className="cat-pill">{p.category || 'Kebutuhan Kucing'}</span>
+                <span className="stock">Stok {p.stock}</span>
+              </div>
               <h3>{p.name}</h3>
               <p>{p.description}</p>
-              <div className="price">{rupiah(p.price)}</div>
-              <small>Stok: {p.stock}</small>
-              <button className="btn btn-primary" onClick={() => addToCart(p)}>Tambah ke keranjang</button>
+              <div className="price-row">
+                <strong>{rupiah(p.price)}</strong>
+                <button className="btn mini" onClick={() => addToCart(p)}>Tambah</button>
+              </div>
             </div>
           ))}
         </div>
       </section>
 
-      <section id="member" className="section container">
-        <h2>Member dan Reward</h2>
-        <div className="grid grid-2">
-          <div className="card">
+      <section id="delivery" className="section alt">
+        <div className="section-head">
+          <div>
+            <h2>Delivery yang Fleksibel</h2>
+            <p>Pilih ongkir per zona, per KM, atau provider eksternal.</p>
+          </div>
+          <div className="badge">Estimasi real-time</div>
+        </div>
+        <div className="delivery-grid">
+          <div className="delivery-card">
+            <h3>Hitung Ongkir</h3>
+            <div className="delivery-box">
+              <label>Metode Pengiriman</label>
+              <select value={deliveryType} onChange={(e) => setDeliveryType(e.target.value)}>
+                <option value="zone">Tarif Flat (Zona)</option>
+                <option value="per_km">Tarif per KM</option>
+                <option value="external">Ongkir Eksternal</option>
+              </select>
+              {deliveryType === 'zone' && (
+                <select value={deliveryInput.zone_id} onChange={(e) => setDeliveryInput({ ...deliveryInput, zone_id: e.target.value })}>
+                  <option value="">Pilih Zona</option>
+                  {zones.map(z => <option key={z.id} value={z.id}>{z.name} - {rupiah(z.flat_fee)}</option>)}
+                </select>
+              )}
+              {deliveryType !== 'zone' && (
+                <>
+                  <input placeholder="Latitude" value={deliveryInput.lat} onChange={(e) => setDeliveryInput({ ...deliveryInput, lat: e.target.value })} />
+                  <input placeholder="Longitude" value={deliveryInput.lng} onChange={(e) => setDeliveryInput({ ...deliveryInput, lng: e.target.value })} />
+                </>
+              )}
+              {deliveryType === 'per_km' && (
+                <input placeholder="Distance (km, optional)" value={deliveryInput.distance_km} onChange={(e) => setDeliveryInput({ ...deliveryInput, distance_km: e.target.value })} />
+              )}
+              <button type="button" className="btn outline" onClick={requestQuote}>Hitung Ongkir</button>
+              {quoteInfo && <small>Ongkir: {rupiah(quoteInfo.fee)} {quoteInfo.distance_km ? `(${quoteInfo.distance_km.toFixed(2)} km)` : ''}</small>}
+            </div>
+          </div>
+          <div className="delivery-card">
+            <h3>Ringkasan Belanja</h3>
+            {cartItems.length === 0 ? <p>Keranjang kosong.</p> : (
+              <ul className="cart-list">
+                {cartItems.map(item => (
+                  <li key={item.product_id}>{item.name} x {item.qty} = {rupiah(item.price * item.qty)}</li>
+                ))}
+              </ul>
+            )}
+            <div className="summary">
+              <p>Subtotal <span>{rupiah(subtotal)}</span></p>
+              <p>Ongkir <span>{rupiah(shippingFee)}</span></p>
+              <p className="total">Estimasi total <span>{rupiah(subtotal + shippingFee)}</span></p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="section">
+        <div className="section-head">
+          <div>
+            <h2>Checkout Cepat</h2>
+            <p>Masukkan data, gunakan voucher, dan bayar dengan Midtrans.</p>
+          </div>
+          <div className="badge">Midtrans Ready</div>
+        </div>
+        <div className="checkout-grid">
+          <div className="checkout-card">
+            <h3>Data Pengiriman</h3>
+            <form className="form-grid" onSubmit={submitOrder}>
+              <input placeholder="Nama" value={checkout.name} onChange={(e) => setCheckout({ ...checkout, name: e.target.value })} />
+              <input placeholder="Telepon" value={checkout.phone} onChange={(e) => setCheckout({ ...checkout, phone: e.target.value })} />
+              <input placeholder="Alamat" value={checkout.address} onChange={(e) => setCheckout({ ...checkout, address: e.target.value })} />
+              <input placeholder="Kode voucher (opsional)" value={checkout.voucher_code} onChange={(e) => setCheckout({ ...checkout, voucher_code: e.target.value })} />
+              <input placeholder="Gunakan cashback (angka)" type="number" value={checkout.wallet_use} onChange={(e) => setCheckout({ ...checkout, wallet_use: Number(e.target.value) })} />
+              <button className="btn primary" type="submit">Checkout</button>
+            </form>
+          </div>
+          <div className="checkout-card">
+            <h3>Informasi Order</h3>
+            {orderInfo ? (
+              <div className="order-info">
+                <p>Order ID: {orderInfo.order_id}</p>
+                <p>Diskon: {rupiah(orderInfo.discount)}</p>
+                <p>Cashback: {rupiah(orderInfo.cashback)}</p>
+                <p>Pakai cashback: {rupiah(orderInfo.wallet_used)}</p>
+                <p>Total: {rupiah(orderInfo.total)}</p>
+                <div className="row">
+                  <button className="btn outline" onClick={requestMidtrans}>Bayar via Midtrans</button>
+                  <button className="btn outline" onClick={checkStatus}>Cek Status</button>
+                </div>
+                {snapUrl && <p>Link pembayaran: {snapUrl}</p>}
+                {paymentStatus && <p>Status pembayaran: {paymentStatus.transaction_status || paymentStatus.status_message || 'unknown'}</p>}
+              </div>
+            ) : (
+              <p>Belum ada order.</p>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section id="layanan" className="section alt">
+        <div className="section-head">
+          <div>
+            <h2>Layanan Lengkap</h2>
+            <p>Dari mandi sampai penitipan - semuanya friendly dan terjadwal.</p>
+          </div>
+          <div className="badge">Konsultasi gratis</div>
+        </div>
+        <div className="service-grid">
+          {services.map(s => (
+            <div className="service-card" key={s.title}>
+              <h3>{s.title}</h3>
+              <p>{s.desc}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section id="member" className="section">
+        <div className="section-head">
+          <div>
+            <h2>Member dan Reward</h2>
+            <p>Tier naik otomatis, voucher muncul saat sering belanja.</p>
+          </div>
+          <div className="badge">Bronze - Platinum</div>
+        </div>
+        <div className="member-grid">
+          <div className="member-card">
             <h3>Status Member</h3>
             {user ? (
               <div className="member-info">
@@ -261,51 +431,63 @@ export default function App() {
                     </ul>
                   </div>
                 )}
-                {myOrders.length > 0 && (
-                  <div className="voucher-list">
-                    <p>Riwayat belanja:</p>
-                    <ul>
-                      {myOrders.slice(0, 5).map(o => (
-                        <li key={o.id}>#{o.id.slice(0, 6)} - {rupiah(o.total)} ({o.status})</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                <button className="btn btn-outline" onClick={logout}>Keluar</button>
+                <button className="btn outline" onClick={logout}>Keluar</button>
               </div>
             ) : (
               <p>Masuk untuk melihat tier dan reward.</p>
             )}
-            <div className="strip">
-              <span className="chip">Bronze: 0 persen</span>
-              <span className="chip">Silver: diskon 2 persen, cashback 1 persen</span>
-              <span className="chip">Gold: diskon 4 persen, cashback 2 persen</span>
-              <span className="chip">Platinum: diskon 7 persen, cashback 3 persen</span>
+            <div className="tier-row">
+              <div>
+                <strong>Bronze</strong>
+                <span>0 persen</span>
+              </div>
+              <div>
+                <strong>Silver</strong>
+                <span>2 persen + 1 persen</span>
+              </div>
+              <div>
+                <strong>Gold</strong>
+                <span>4 persen + 2 persen</span>
+              </div>
+              <div>
+                <strong>Platinum</strong>
+                <span>7 persen + 3 persen</span>
+              </div>
             </div>
           </div>
-          <div className="card">
-            <h3>Login Member</h3>
-            <form className="form-grid" onSubmit={submitLogin}>
-              <input placeholder="Email" value={loginForm.email} onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })} />
-              <input placeholder="Password" type="password" value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} />
-              <button className="btn" type="submit">Masuk</button>
-            </form>
-            <h3>Daftar Member Baru</h3>
-            <form className="form-grid" onSubmit={submitRegister}>
-              <input placeholder="Nama" value={registerForm.name} onChange={(e) => setRegisterForm({ ...registerForm, name: e.target.value })} />
-              <input placeholder="Email" value={registerForm.email} onChange={(e) => setRegisterForm({ ...registerForm, email: e.target.value })} />
-              <input placeholder="Telepon" value={registerForm.phone} onChange={(e) => setRegisterForm({ ...registerForm, phone: e.target.value })} />
-              <input placeholder="Password" type="password" value={registerForm.password} onChange={(e) => setRegisterForm({ ...registerForm, password: e.target.value })} />
-              <button className="btn" type="submit">Daftar</button>
-            </form>
+          <div className="member-card">
+            <div className="auth-block">
+              <h3>Login Member</h3>
+              <form className="form-grid" onSubmit={submitLogin}>
+                <input placeholder="Email" value={loginForm.email} onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })} />
+                <input placeholder="Password" type="password" value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} />
+                <button className="btn">Masuk</button>
+              </form>
+            </div>
+            <div className="auth-block">
+              <h3>Daftar Member Baru</h3>
+              <form className="form-grid" onSubmit={submitRegister}>
+                <input placeholder="Nama" value={registerForm.name} onChange={(e) => setRegisterForm({ ...registerForm, name: e.target.value })} />
+                <input placeholder="Email" value={registerForm.email} onChange={(e) => setRegisterForm({ ...registerForm, email: e.target.value })} />
+                <input placeholder="Telepon" value={registerForm.phone} onChange={(e) => setRegisterForm({ ...registerForm, phone: e.target.value })} />
+                <input placeholder="Password" type="password" value={registerForm.password} onChange={(e) => setRegisterForm({ ...registerForm, password: e.target.value })} />
+                <button className="btn">Daftar</button>
+              </form>
+            </div>
           </div>
         </div>
       </section>
 
       {user && (
-        <section className="section container">
-          <h2>Riwayat Pesanan</h2>
-          <div className="card">
+        <section className="section alt">
+          <div className="section-head">
+            <div>
+              <h2>Riwayat Pesanan</h2>
+              <p>Detail transaksi member Petshop Bento.</p>
+            </div>
+            <div className="badge">Aman dan transparan</div>
+          </div>
+          <div className="table-card">
             {myOrders.length === 0 ? (
               <p>Belum ada pesanan.</p>
             ) : (
@@ -340,91 +522,17 @@ export default function App() {
         </section>
       )}
 
-      <section className="section container">
-        <h2>Checkout dan Voucher</h2>
-        <div className="grid grid-2">
-          <div className="card">
-            <h3>Ringkasan Keranjang</h3>
-            {cartItems.length === 0 ? <p>Keranjang kosong.</p> : (
-              <ul className="cart-list">
-                {cartItems.map(item => (
-                  <li key={item.product_id}>{item.name} x {item.qty} = {rupiah(item.price * item.qty)}</li>
-                ))}
-              </ul>
-            )}
-            <p><strong>Subtotal: {rupiah(subtotal)}</strong></p>
-            <p>Ongkir: {rupiah(shippingFee)}</p>
-            <p><strong>Estimasi total: {rupiah(subtotal + shippingFee)}</strong></p>
+      <section id="dokter" className="section">
+        <div className="section-head">
+          <div>
+            <h2>Jadwal Dokter dan Vaksin</h2>
+            <p>Booking konsultasi sesuai jadwal tersedia.</p>
           </div>
-          <div className="card">
-            <h3>Buat Pesanan</h3>
-            <form className="form-grid" onSubmit={submitOrder}>
-              <input placeholder="Nama" value={checkout.name} onChange={(e) => setCheckout({ ...checkout, name: e.target.value })} />
-              <input placeholder="Telepon" value={checkout.phone} onChange={(e) => setCheckout({ ...checkout, phone: e.target.value })} />
-              <input placeholder="Alamat" value={checkout.address} onChange={(e) => setCheckout({ ...checkout, address: e.target.value })} />
-              <input placeholder="Kode voucher (opsional)" value={checkout.voucher_code} onChange={(e) => setCheckout({ ...checkout, voucher_code: e.target.value })} />
-              <div className="delivery-box">
-                <label>Metode Pengiriman</label>
-                <select value={deliveryType} onChange={(e) => setDeliveryType(e.target.value)}>
-                  <option value="zone">Tarif Flat (Zona)</option>
-                  <option value="per_km">Tarif per KM</option>
-                  <option value="external">Ongkir Eksternal</option>
-                </select>
-                {deliveryType === 'zone' && (
-                  <select value={deliveryInput.zone_id} onChange={(e) => setDeliveryInput({ ...deliveryInput, zone_id: e.target.value })}>
-                    <option value="">Pilih Zona</option>
-                    {zones.map(z => <option key={z.id} value={z.id}>{z.name} - {rupiah(z.flat_fee)}</option>)}
-                  </select>
-                )}
-                {deliveryType !== 'zone' && (
-                  <>
-                    <input placeholder="Latitude" value={deliveryInput.lat} onChange={(e) => setDeliveryInput({ ...deliveryInput, lat: e.target.value })} />
-                    <input placeholder="Longitude" value={deliveryInput.lng} onChange={(e) => setDeliveryInput({ ...deliveryInput, lng: e.target.value })} />
-                  </>
-                )}
-                {deliveryType === 'per_km' && (
-                  <input placeholder="Distance (km, optional)" value={deliveryInput.distance_km} onChange={(e) => setDeliveryInput({ ...deliveryInput, distance_km: e.target.value })} />
-                )}
-                <button type="button" className="btn btn-outline" onClick={requestQuote}>Hitung Ongkir</button>
-                {quoteInfo && <small>Ongkir: {rupiah(quoteInfo.fee)} {quoteInfo.distance_km ? `(${quoteInfo.distance_km.toFixed(2)} km)` : ''}</small>}
-              </div>
-              <input placeholder="Gunakan cashback (angka)" type="number" value={checkout.wallet_use} onChange={(e) => setCheckout({ ...checkout, wallet_use: Number(e.target.value) })} />
-              <button className="btn" type="submit">Checkout</button>
-            </form>
-            {orderInfo && (
-              <div className="order-info">
-                <p>Order ID: {orderInfo.order_id}</p>
-                <p>Diskon: {rupiah(orderInfo.discount)}</p>
-                <p>Cashback: {rupiah(orderInfo.cashback)}</p>
-                <p>Pakai cashback: {rupiah(orderInfo.wallet_used)}</p>
-                <p>Total: {rupiah(orderInfo.total)}</p>
-                <button className="btn btn-outline" onClick={requestMidtrans}>Bayar via Midtrans</button>
-                <button className="btn btn-outline" onClick={checkStatus}>Cek Status</button>
-                {snapUrl && <p>Link pembayaran: {snapUrl}</p>}
-                {paymentStatus && <p>Status pembayaran: {paymentStatus.transaction_status || paymentStatus.status_message || 'unknown'}</p>}
-              </div>
-            )}
-          </div>
+          <div className="badge">Dokter hewan berpengalaman</div>
         </div>
-      </section>
-
-      <section id="layanan" className="section container">
-        <h2>Layanan Lengkap</h2>
-        <div className="grid grid-3">
-          {services.map(s => (
-            <div className="card" key={s.title}>
-              <h3>{s.title}</h3>
-              <p>{s.desc}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section id="dokter" className="section container">
-        <h2>Jadwal Dokter dan Vaksin</h2>
-        <div className="grid grid-2">
+        <div className="doctor-grid">
           {(schedules.length ? schedules : demoSchedules).map(s => (
-            <div className="card" key={s.id || s.doctor_name}>
+            <div className="doctor-card" key={s.id || s.doctor_name}>
               <h3>{s.doctor_name}</h3>
               <p>{s.day_of_week} | {s.start_time} - {s.end_time}</p>
               <small>{s.location}</small>
@@ -433,31 +541,41 @@ export default function App() {
         </div>
       </section>
 
-      <section id="lokasi" className="section container">
-        <h2>Lokasi dan Pengiriman</h2>
-        <div className="grid grid-2">
-          <div className="card">
+      <section className="section alt">
+        <div className="section-head">
+          <div>
+            <h2>Lokasi dan Kontak</h2>
+            <p>Datang langsung atau kirim via kurir lokal.</p>
+          </div>
+          <div className="badge">Cikande, Serang</div>
+        </div>
+        <div className="location-grid">
+          <div className="location-card">
             <h3>Alamat</h3>
             <p>Jl. Cikande Permai No.11-12 Blok L9 Komp, Situterate, Kec. Cikande, Kabupaten Serang, Banten 42186</p>
             <p>Koordinat: -6.2216339332113595, 106.34573045889455</p>
             <p>Telp: +62 896-4385-2920</p>
           </div>
-          <div className="card">
+          <div className="location-card highlight">
             <h3>Pengiriman dan Pembayaran</h3>
-            <p>Pengiriman area Cikande dan sekitar. Bisa beli online dan bayar via Midtrans (transfer, e-wallet, kartu).</p>
-            <div className="strip">
-              <span className="chip">GoSend</span>
-              <span className="chip">GrabExpress</span>
-              <span className="chip">Kurir lokal</span>
+            <p>GoSend, GrabExpress, kurir lokal, dan layanan eksternal. Midtrans menerima transfer, e-wallet, kartu.</p>
+            <div className="hero-tags">
+              <span>GoSend</span>
+              <span>GrabExpress</span>
+              <span>Kurir lokal</span>
             </div>
           </div>
         </div>
       </section>
 
-      <footer className="footer container">
-        <div className="strip">
-          <span>Petshop Bento 2026</span>
-          <span>Konsultasi gratis via WhatsApp</span>
+      <footer className="footer">
+        <div>
+          <strong>Petshop Bento</strong>
+          <p>Cat care dengan rasa hangat dan percaya diri.</p>
+        </div>
+        <div>
+          <p>WhatsApp: +62 896-4385-2920</p>
+          <p>Cikande, Serang</p>
         </div>
       </footer>
     </div>
@@ -465,9 +583,9 @@ export default function App() {
 }
 
 const demoProducts = [
-  { name: 'Whiskas Adult 1.2kg', description: 'Rasa tuna, kaya nutrisi', price: 68000, stock: 25 },
-  { name: 'Vitamin Bulu Halus', description: 'Vitamin kulit dan bulu kucing', price: 42000, stock: 30 },
-  { name: 'Pasir Kucing 10L', description: 'Aroma lembut, daya serap tinggi', price: 55000, stock: 18 }
+  { name: 'Whiskas Adult 1.2kg', description: 'Rasa tuna, kaya nutrisi', price: 68000, stock: 25, category: 'Makanan' },
+  { name: 'Vitamin Bulu Halus', description: 'Vitamin kulit dan bulu kucing', price: 42000, stock: 30, category: 'Vitamin' },
+  { name: 'Pasir Kucing 10L', description: 'Aroma lembut, daya serap tinggi', price: 55000, stock: 18, category: 'Pasir' }
 ]
 
 const services = [
@@ -481,4 +599,18 @@ const services = [
 
 const demoSchedules = [
   { doctor_name: 'Drh. Sinta', day_of_week: 'Senin', start_time: '09:00', end_time: '16:00', location: 'Petshop Bento - Cikande' }
+]
+
+const promoTiles = [
+  { title: 'Voucher Welcome', desc: 'Diskon member baru langsung aktif.' },
+  { title: 'Cashback Instan', desc: 'Saldo otomatis masuk ke wallet.' },
+  { title: 'Delivery Fleksibel', desc: 'Zone, per km, atau eksternal.' },
+  { title: 'Dokter Berjadwal', desc: 'Booking tanpa antri.' }
+]
+
+const valueProps = [
+  { title: 'Produk Terkurasi', desc: 'Stok aman, kualitas terjaga.' },
+  { title: 'Layanan Lengkap', desc: 'Grooming, penitipan, vaksin.' },
+  { title: 'Member Friendly', desc: 'Diskon, cashback, voucher.' },
+  { title: 'Pembayaran Aman', desc: 'Midtrans siap semua metode.' }
 ]
