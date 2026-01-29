@@ -1,0 +1,21 @@
+server:
+  port: ${BOOKING_PORT:8082}
+
+spring:
+  datasource:
+    url: ${BOOKING_DB_URL:jdbc:postgresql://localhost:5434/petshop_booking}
+    username: ${BOOKING_DB_USER:petshop}
+    password: ${BOOKING_DB_PASS:petshop}
+
+midtrans:
+  serverKey: ${MIDTRANS_SERVER_KEY:}
+  snapUrl: ${MIDTRANS_SNAP_URL:https://app.sandbox.midtrans.com/snap/v1/transactions}
+  statusUrl: ${MIDTRANS_STATUS_URL:https://api.sandbox.midtrans.com/v2}
+  isProd: ${MIDTRANS_IS_PROD:false}
+
+core:
+  webhookUrl: ${CORE_WEBHOOK_URL:http://localhost:8081/webhooks/midtrans}
+  webhookSecret: ${CORE_WEBHOOK_SECRET:}
+
+booking:
+  adminSecret: ${BOOKING_ADMIN_SECRET:}

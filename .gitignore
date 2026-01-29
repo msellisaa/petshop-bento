@@ -1,0 +1,28 @@
+# Node
+node_modules/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Env
+.env
+apps/web/.env
+apps/admin/.env
+
+# Go
+services/core-go/*.exe
+services/core-go/*.out
+services/core-go/.env
+
+# Java/Gradle
+services/booking-java/.gradle/
+services/booking-java/build/
+services/booking-java/.idea/
+services/booking-java/*.iml
+
+# OS
+.DS_Store
+Thumbs.db

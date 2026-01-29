@@ -1,0 +1,24 @@
+services:
+  db-core:
+    image: postgres:16
+    container_name: petshop_core_db
+    environment:
+      POSTGRES_DB: petshop_core
+      POSTGRES_USER: petshop
+      POSTGRES_PASSWORD: petshop
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./infra/db/core_schema.sql:/docker-entrypoint-initdb.d/01_core_schema.sql:ro
+
+  db-booking:
+    image: postgres:16
+    container_name: petshop_booking_db
+    environment:
+      POSTGRES_DB: petshop_booking
+      POSTGRES_USER: petshop
+      POSTGRES_PASSWORD: petshop
+    ports:
+      - "5434:5432"
+    volumes:
+      - ./infra/db/booking_schema.sql:/docker-entrypoint-initdb.d/01_booking_schema.sql:ro
