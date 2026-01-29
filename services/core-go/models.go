@@ -48,11 +48,30 @@ type AuthRegisterRequest struct {
   Email    string `json:"email"`
   Phone    string `json:"phone"`
   Password string `json:"password"`
+  OtpToken string `json:"otp_token"`
 }
 
 type AuthLoginRequest struct {
   Email    string `json:"email"`
   Password string `json:"password"`
+}
+
+type OtpRequest struct {
+  Email   string `json:"email"`
+  Purpose string `json:"purpose"`
+}
+
+type OtpVerifyRequest struct {
+  Email   string `json:"email"`
+  Purpose string `json:"purpose"`
+  Code    string `json:"code"`
+}
+
+type GoogleLoginRequest struct {
+  Email    string `json:"email"`
+  Name     string `json:"name"`
+  Phone    string `json:"phone"`
+  GoogleID string `json:"google_id"`
 }
 
 type AdminBootstrapRequest struct {
