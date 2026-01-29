@@ -67,7 +67,13 @@ public class BookingController {
   }
 
   @GetMapping("/appointments")
-  public ResponseEntity<?> listAppointments(@RequestParam(value = "phone", required = false) String phone) {
+  public ResponseEntity<?> listAppointments(
+    @RequestParam(value = "phone", required = false) String phone,
+    @RequestHeader(value = "X-Admin-Secret", required = false) String secret
+  ) {
+    if (!isAdmin(secret)) {
+      return ResponseEntity.status(401).body(Map.of("error", "unauthorized"));
+    }
     if (phone != null && !phone.isBlank()) {
       return ResponseEntity.ok(repo.listAppointmentsByPhone(phone));
     }
@@ -81,7 +87,13 @@ public class BookingController {
   }
 
   @GetMapping("/services/booking")
-  public ResponseEntity<?> listServiceBookings(@RequestParam(value = "phone", required = false) String phone) {
+  public ResponseEntity<?> listServiceBookings(
+    @RequestParam(value = "phone", required = false) String phone,
+    @RequestHeader(value = "X-Admin-Secret", required = false) String secret
+  ) {
+    if (!isAdmin(secret)) {
+      return ResponseEntity.status(401).body(Map.of("error", "unauthorized"));
+    }
     if (phone != null && !phone.isBlank()) {
       return ResponseEntity.ok(repo.listServiceBookingsByPhone(phone));
     }
@@ -93,7 +105,7 @@ public class BookingController {
     if (!isAdmin(secret)) {
       return ResponseEntity.status(401).body(Map.of("error", "unauthorized"));
     }
-    return repo.listAppointments();
+    return ResponseEntity.ok(repo.listAppointments());
   }
 
   @PutMapping("/admin/appointments/{id}/status")
@@ -114,7 +126,7 @@ public class BookingController {
     if (!isAdmin(secret)) {
       return ResponseEntity.status(401).body(Map.of("error", "unauthorized"));
     }
-    return repo.listServiceBookings();
+    return ResponseEntity.ok(repo.listServiceBookings());
   }
 
   @PutMapping("/admin/service-bookings/{id}/status")

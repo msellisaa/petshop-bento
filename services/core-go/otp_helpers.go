@@ -42,7 +42,7 @@ func otpDestination(email string, phone string, channel string) (string, string,
   if channel == "" {
     channel = "whatsapp"
   }
-  if channel != "whatsapp" && channel != "sms" {
+  if channel != "whatsapp" {
     return "", "", errors.New("invalid channel for phone")
   }
   return phone, channel, nil

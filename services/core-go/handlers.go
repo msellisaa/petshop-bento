@@ -271,7 +271,20 @@ func orderHandler(db *sql.DB) http.HandlerFunc {
       return
     }
 
-    total := subtotal - discount - voucherDiscount + req.ShippingFee
+    deliveryReq := DeliveryQuoteRequest{
+      Type:     req.DeliveryType,
+      ZoneID:   req.ZoneID,
+      Lat:      req.Lat,
+      Lng:      req.Lng,
+      Distance: req.DistanceKm,
+    }
+    shippingFee, err := quoteShippingFee(db, deliveryReq)
+    if err != nil {
+      writeJSON(w, http.StatusBadRequest, errMsg(err.Error()))
+      return
+    }
+
+    total := subtotal - discount - voucherDiscount + shippingFee
     if total < 0 {
       total = 0
     }
@@ -290,7 +303,7 @@ func orderHandler(db *sql.DB) http.HandlerFunc {
 
     var orderID string
     err = tx.QueryRow(`INSERT INTO orders (cart_id, user_id, customer_name, phone, address, shipping_fee, subtotal, discount, voucher_code, cashback, wallet_used, total) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
-      req.CartID, nullIfEmpty(userID), req.CustomerName, req.Phone, req.Address, req.ShippingFee, subtotal, discount+voucherDiscount, nullIfEmpty(req.VoucherCode), cashback, walletUsed, total).
+      req.CartID, nullIfEmpty(userID), req.CustomerName, req.Phone, req.Address, shippingFee, subtotal, discount+voucherDiscount, nullIfEmpty(req.VoucherCode), cashback, walletUsed, total).
       Scan(&orderID)
     if err != nil {
       writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
@@ -335,6 +348,10 @@ func orderHandler(db *sql.DB) http.HandlerFunc {
         writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
         return
       }
+    }
+    if _, err := tx.Exec(`DELETE FROM cart_items WHERE cart_id = $1`, req.CartID); err != nil {
+      writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
+      return
     }
 
     responseTier := tierInfo.Name

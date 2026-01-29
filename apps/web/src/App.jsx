@@ -99,19 +99,43 @@ export default function App() {
       username: user.username || '',
       avatar_url: user.avatar_url || ''
     })
-    if (user.phone) {
-      fetch(`${BOOKING_API}/appointments?phone=${encodeURIComponent(user.phone)}`)
+    if (user.phone && token) {
+      fetch(`${CORE_API}/me/appointments`, { headers: { 'X-Auth-Token': token } })
         .then(r => r.json())
         .then(data => { if (Array.isArray(data)) setMyAppointments(data) })
         .catch(() => setMyAppointments([]))
-      fetch(`${BOOKING_API}/services/booking?phone=${encodeURIComponent(user.phone)}`)
+      fetch(`${CORE_API}/me/service-bookings`, { headers: { 'X-Auth-Token': token } })
         .then(r => r.json())
         .then(data => { if (Array.isArray(data)) setMyServices(data) })
         .catch(() => setMyServices([]))
     }
-  }, [user])
+  }, [user, token])
 
   const subtotal = useMemo(() => cartItems.reduce((acc, item) => acc + item.price * item.qty, 0), [cartItems])
+  const canCheckout = useMemo(() => {
+    if (!cartId) return false
+    if (!checkout.name || !checkout.phone || !checkout.address) return false
+    if (!quoteInfo) return false
+    if (deliveryType === 'zone') return !!deliveryInput.zone_id
+    if (deliveryType === 'per_km') {
+      const hasDistance = Number(deliveryInput.distance_km || 0) > 0
+      const hasCoords = Number(deliveryInput.lat || 0) !== 0 && Number(deliveryInput.lng || 0) !== 0
+      return hasDistance || hasCoords
+    }
+    if (deliveryType === 'external') return true
+    return false
+  }, [
+    cartId,
+    checkout.name,
+    checkout.phone,
+    checkout.address,
+    quoteInfo,
+    deliveryType,
+    deliveryInput.zone_id,
+    deliveryInput.lat,
+    deliveryInput.lng,
+    deliveryInput.distance_km
+  ])
   const categories = useMemo(() => {
     const all = new Set(products.map(p => p.category).filter(Boolean))
     return ['all', ...Array.from(all)]
@@ -229,7 +253,7 @@ export default function App() {
 
   const requestOtp = async () => {
     if (registerMethod !== 'email' && !registerForm.phone) {
-      setOtpState({ ...otpState, message: 'Nomor WhatsApp/SMS wajib diisi sebelum OTP.' })
+      setOtpState({ ...otpState, message: 'Nomor WhatsApp wajib diisi sebelum OTP.' })
       return
     }
     if (registerMethod === 'email' && !registerForm.email) {
@@ -406,6 +430,22 @@ export default function App() {
       setCheckoutStatus('Nama, telepon, dan alamat wajib diisi.')
       return
     }
+    if (!quoteInfo) {
+      setCheckoutStatus('Hitung ongkir dulu sebelum checkout.')
+      return
+    }
+    if (deliveryType === 'zone' && !deliveryInput.zone_id) {
+      setCheckoutStatus('Pilih zona pengiriman.')
+      return
+    }
+    if (deliveryType === 'per_km') {
+      const hasDistance = Number(deliveryInput.distance_km || 0) > 0
+      const hasCoords = Number(deliveryInput.lat || 0) !== 0 && Number(deliveryInput.lng || 0) !== 0
+      if (!hasDistance && !hasCoords) {
+        setCheckoutStatus('Isi jarak atau koordinat untuk ongkir per KM.')
+        return
+      }
+    }
     const resp = await fetch(`${CORE_API}/orders`, {
       method: 'POST',
       headers: {
@@ -417,7 +457,11 @@ export default function App() {
         customer_name: checkout.name,
         phone: checkout.phone,
         address: checkout.address,
-        shipping_fee: shippingFee,
+        delivery_type: deliveryType,
+        zone_id: deliveryInput.zone_id,
+        lat: Number(deliveryInput.lat || 0),
+        lng: Number(deliveryInput.lng || 0),
+        distance_km: Number(deliveryInput.distance_km || 0),
         voucher_code: checkout.voucher_code,
         wallet_use: Number(checkout.wallet_use || 0)
       })
@@ -431,6 +475,9 @@ export default function App() {
       setOrderInfo(data)
       setSnapUrl('')
       setPaymentStatus(null)
+      setCartItems([])
+      setCartId('')
+      localStorage.removeItem('cart_id')
       if (token) {
         const me = await fetch(`${CORE_API}/me`, { headers: { 'X-Auth-Token': token } }).then(r => r.json())
         if (!me.error) setUser(me)
@@ -788,7 +835,7 @@ export default function App() {
               <input placeholder="Alamat" value={checkout.address} onChange={(e) => setCheckout({ ...checkout, address: e.target.value })} />
               <input placeholder="Kode voucher (opsional)" value={checkout.voucher_code} onChange={(e) => setCheckout({ ...checkout, voucher_code: e.target.value })} />
               <input placeholder="Gunakan cashback (angka)" type="number" value={checkout.wallet_use} onChange={(e) => setCheckout({ ...checkout, wallet_use: Number(e.target.value) })} />
-              <button className="btn primary" type="submit">Checkout</button>
+              <button className="btn primary" type="submit" disabled={!canCheckout}>Checkout</button>
               {checkoutStatus && <small>{checkoutStatus}</small>}
             </form>
           </div>
@@ -966,7 +1013,6 @@ export default function App() {
                 }}>
                   <option value="email">Daftar via Email</option>
                   <option value="whatsapp">Daftar via WhatsApp</option>
-                  <option value="sms">Daftar via SMS</option>
                 </select>
                 {registerMethod === 'email' ? (
                   <input placeholder="Email" value={registerForm.email} onChange={(e) => {
@@ -975,7 +1021,7 @@ export default function App() {
                     setOtpState({ ...otpState, token: '', verified: false, sent: false, message: '' })
                   }} />
                 ) : (
-                  <input placeholder="Nomor WhatsApp/SMS" value={registerForm.phone} onChange={(e) => {
+                  <input placeholder="Nomor WhatsApp" value={registerForm.phone} onChange={(e) => {
                     const phone = e.target.value
                     setRegisterForm({ ...registerForm, phone })
                     setOtpState({ ...otpState, token: '', verified: false, sent: false, message: '' })
