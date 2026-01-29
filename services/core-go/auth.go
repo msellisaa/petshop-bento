@@ -1216,6 +1216,261 @@ func adminOrderStatusHandler(db *sql.DB) http.HandlerFunc {
   }
 }
 
+func adminExpensesHandler(db *sql.DB) http.HandlerFunc {
+  return func(w http.ResponseWriter, r *http.Request) {
+    switch r.Method {
+    case http.MethodGet:
+      if _, err := requireRoles(db, r, "owner", "admin", "staff"); err != nil {
+        writeJSON(w, http.StatusUnauthorized, errMsg("unauthorized"))
+        return
+      }
+      rows, err := db.Query(`SELECT id, date, category, description, amount, created_at FROM expenses ORDER BY date DESC, created_at DESC`)
+      if err != nil {
+        writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
+        return
+      }
+      defer rows.Close()
+      out := []map[string]any{}
+      for rows.Next() {
+        var id, date, category, description, createdAt string
+        var amount int
+        if err := rows.Scan(&id, &date, &category, &description, &amount, &createdAt); err != nil {
+          writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
+          return
+        }
+        out = append(out, map[string]any{
+          "id": id,
+          "date": date,
+          "category": category,
+          "description": description,
+          "amount": amount,
+          "created_at": createdAt,
+        })
+      }
+      writeJSON(w, http.StatusOK, out)
+    case http.MethodPost:
+      if _, err := requireRoles(db, r, "owner", "admin"); err != nil {
+        writeJSON(w, http.StatusUnauthorized, errMsg("unauthorized"))
+        return
+      }
+      var req ExpenseRequest
+      if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        writeJSON(w, http.StatusBadRequest, errMsg("invalid json"))
+        return
+      }
+      if strings.TrimSpace(req.Date) == "" || req.Amount <= 0 {
+        writeJSON(w, http.StatusBadRequest, errMsg("date and amount required"))
+        return
+      }
+      _, err := time.Parse("2006-01-02", req.Date)
+      if err != nil {
+        writeJSON(w, http.StatusBadRequest, errMsg("invalid date"))
+        return
+      }
+      _, err = db.Exec(`INSERT INTO expenses (date, category, description, amount) VALUES ($1,$2,$3,$4)`,
+        req.Date, req.Category, req.Description, req.Amount)
+      if err != nil {
+        writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
+        return
+      }
+      writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+    default:
+      writeJSON(w, http.StatusMethodNotAllowed, errMsg("method not allowed"))
+    }
+  }
+}
+
+func adminExpenseItemHandler(db *sql.DB) http.HandlerFunc {
+  return func(w http.ResponseWriter, r *http.Request) {
+    if _, err := requireRoles(db, r, "owner", "admin"); err != nil {
+      writeJSON(w, http.StatusUnauthorized, errMsg("unauthorized"))
+      return
+    }
+    id := strings.TrimPrefix(r.URL.Path, "/admin/expenses/")
+    id = strings.TrimSpace(id)
+    if id == "" {
+      writeJSON(w, http.StatusBadRequest, errMsg("missing id"))
+      return
+    }
+    switch r.Method {
+    case http.MethodPut:
+      var req ExpenseRequest
+      if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        writeJSON(w, http.StatusBadRequest, errMsg("invalid json"))
+        return
+      }
+      if strings.TrimSpace(req.Date) == "" || req.Amount <= 0 {
+        writeJSON(w, http.StatusBadRequest, errMsg("date and amount required"))
+        return
+      }
+      _, err := time.Parse("2006-01-02", req.Date)
+      if err != nil {
+        writeJSON(w, http.StatusBadRequest, errMsg("invalid date"))
+        return
+      }
+      _, err = db.Exec(`UPDATE expenses SET date = $1, category = $2, description = $3, amount = $4 WHERE id = $5`,
+        req.Date, req.Category, req.Description, req.Amount, id)
+      if err != nil {
+        writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
+        return
+      }
+      writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+    case http.MethodDelete:
+      _, err := db.Exec(`DELETE FROM expenses WHERE id = $1`, id)
+      if err != nil {
+        writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
+        return
+      }
+      writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+    default:
+      writeJSON(w, http.StatusMethodNotAllowed, errMsg("method not allowed"))
+    }
+  }
+}
+
+func adminSalesReportHandler(db *sql.DB) http.HandlerFunc {
+  return func(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodGet {
+      writeJSON(w, http.StatusMethodNotAllowed, errMsg("method not allowed"))
+      return
+    }
+    if _, err := requireRoles(db, r, "owner", "admin", "staff"); err != nil {
+      writeJSON(w, http.StatusUnauthorized, errMsg("unauthorized"))
+      return
+    }
+    from := r.URL.Query().Get("from")
+    to := r.URL.Query().Get("to")
+    group := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("group")))
+    if group == "" {
+      group = "day"
+    }
+    if group != "day" && group != "month" {
+      writeJSON(w, http.StatusBadRequest, errMsg("invalid group"))
+      return
+    }
+    if from == "" || to == "" {
+      today := time.Now()
+      to = today.Format("2006-01-02")
+      from = today.AddDate(0, 0, -30).Format("2006-01-02")
+    }
+    if _, err := time.Parse("2006-01-02", from); err != nil {
+      writeJSON(w, http.StatusBadRequest, errMsg("invalid from"))
+      return
+    }
+    if _, err := time.Parse("2006-01-02", to); err != nil {
+      writeJSON(w, http.StatusBadRequest, errMsg("invalid to"))
+      return
+    }
+    granularity := "day"
+    if group == "month" {
+      granularity = "month"
+    }
+    rows, err := db.Query(
+      `SELECT date_trunc($1, created_at)::date AS period,
+              COUNT(*) AS orders_count,
+              COALESCE(SUM(subtotal + shipping_fee),0) AS gross_sales,
+              COALESCE(SUM(discount),0) AS discount,
+              COALESCE(SUM(cashback),0) AS cashback,
+              COALESCE(SUM(wallet_used),0) AS wallet_used,
+              COALESCE(SUM(shipping_fee),0) AS shipping_fee,
+              COALESCE(SUM(total),0) AS total_sales
+         FROM orders
+        WHERE created_at::date BETWEEN $2 AND $3
+        GROUP BY period
+        ORDER BY period DESC`,
+      granularity, from, to,
+    )
+    if err != nil {
+      writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
+      return
+    }
+    defer rows.Close()
+    out := []map[string]any{}
+    for rows.Next() {
+      var period string
+      var ordersCount, grossSales, discount, cashback, walletUsed, shippingFee, totalSales int
+      if err := rows.Scan(&period, &ordersCount, &grossSales, &discount, &cashback, &walletUsed, &shippingFee, &totalSales); err != nil {
+        writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
+        return
+      }
+      out = append(out, map[string]any{
+        "period": period,
+        "orders_count": ordersCount,
+        "gross_sales": grossSales,
+        "discount": discount,
+        "cashback": cashback,
+        "wallet_used": walletUsed,
+        "shipping_fee": shippingFee,
+        "total_sales": totalSales,
+      })
+    }
+    writeJSON(w, http.StatusOK, out)
+  }
+}
+
+func adminFinanceSummaryHandler(db *sql.DB) http.HandlerFunc {
+  return func(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodGet {
+      writeJSON(w, http.StatusMethodNotAllowed, errMsg("method not allowed"))
+      return
+    }
+    if _, err := requireRoles(db, r, "owner", "admin", "staff"); err != nil {
+      writeJSON(w, http.StatusUnauthorized, errMsg("unauthorized"))
+      return
+    }
+    from := r.URL.Query().Get("from")
+    to := r.URL.Query().Get("to")
+    if from == "" || to == "" {
+      today := time.Now()
+      to = today.Format("2006-01-02")
+      from = today.AddDate(0, 0, -30).Format("2006-01-02")
+    }
+    if _, err := time.Parse("2006-01-02", from); err != nil {
+      writeJSON(w, http.StatusBadRequest, errMsg("invalid from"))
+      return
+    }
+    if _, err := time.Parse("2006-01-02", to); err != nil {
+      writeJSON(w, http.StatusBadRequest, errMsg("invalid to"))
+      return
+    }
+    var salesTotal, discountTotal, cashbackTotal, shippingTotal, expenseTotal int
+    err := db.QueryRow(
+      `SELECT COALESCE(SUM(total),0),
+              COALESCE(SUM(discount),0),
+              COALESCE(SUM(cashback),0),
+              COALESCE(SUM(shipping_fee),0)
+         FROM orders
+        WHERE created_at::date BETWEEN $1 AND $2`,
+      from, to,
+    ).Scan(&salesTotal, &discountTotal, &cashbackTotal, &shippingTotal)
+    if err != nil {
+      writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
+      return
+    }
+    err = db.QueryRow(
+      `SELECT COALESCE(SUM(amount),0)
+         FROM expenses
+        WHERE date BETWEEN $1 AND $2`,
+      from, to,
+    ).Scan(&expenseTotal)
+    if err != nil {
+      writeJSON(w, http.StatusInternalServerError, errMsg(err.Error()))
+      return
+    }
+    profit := salesTotal - expenseTotal
+    writeJSON(w, http.StatusOK, map[string]any{
+      "sales_total": salesTotal,
+      "discount_total": discountTotal,
+      "cashback_total": cashbackTotal,
+      "shipping_total": shippingTotal,
+      "expense_total": expenseTotal,
+      "profit": profit,
+      "from": from,
+      "to": to,
+    })
+  }
+}
+
 func midtransWebhookHandler(db *sql.DB) http.HandlerFunc {
   return func(w http.ResponseWriter, r *http.Request) {
     if r.Method != http.MethodPost {

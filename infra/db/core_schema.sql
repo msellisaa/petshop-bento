@@ -122,6 +122,15 @@ CREATE TABLE orders (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
+CREATE TABLE expenses (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  date DATE NOT NULL,
+  category TEXT,
+  description TEXT,
+  amount INT NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
 CREATE TABLE delivery_zones (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT NOT NULL,
