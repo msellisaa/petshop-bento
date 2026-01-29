@@ -17,6 +17,9 @@ export default function App() {
   const [serviceBookings, setServiceBookings] = useState([])
   const [staff, setStaff] = useState([])
   const [zones, setZones] = useState([])
+  const [expenses, setExpenses] = useState([])
+  const [salesReport, setSalesReport] = useState([])
+  const [financeSummary, setFinanceSummary] = useState(null)
   const [deliverySettings, setDeliverySettings] = useState({ base_lat: -6.2216339332113595, base_lng: 106.34573045889455, per_km_rate: 3000, min_fee: 8000 })
   const [productForm, setProductForm] = useState({ name: '', description: '', price: 0, stock: 0, category: '' })
   const [productEditId, setProductEditId] = useState('')
@@ -29,6 +32,15 @@ export default function App() {
   const [staffEditId, setStaffEditId] = useState('')
   const [zoneForm, setZoneForm] = useState({ name: '', flat_fee: 0, active: true })
   const [zoneEditId, setZoneEditId] = useState('')
+  const [expenseForm, setExpenseForm] = useState({ date: '', category: '', description: '', amount: 0 })
+  const [expenseEditId, setExpenseEditId] = useState('')
+  const [reportRange, setReportRange] = useState(() => {
+    const today = new Date()
+    const to = today.toISOString().slice(0, 10)
+    const fromDate = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000)
+    const from = fromDate.toISOString().slice(0, 10)
+    return { from, to, group: 'day' }
+  })
 
   const adminHeaders = adminToken ? { 'X-Auth-Token': adminToken } : {}
   const bookingAdminHeaders = BOOKING_ADMIN_SECRET ? { 'X-Admin-Secret': BOOKING_ADMIN_SECRET } : {}
@@ -42,6 +54,7 @@ export default function App() {
     fetch(`${CORE_API}/admin/staff`, { headers: adminHeaders }).then(r => r.json()).then(setStaff).catch(() => setStaff([]))
     fetch(`${CORE_API}/admin/delivery/zones`, { headers: adminHeaders }).then(r => r.json()).then(setZones).catch(() => setZones([]))
     fetch(`${CORE_API}/admin/delivery/settings`, { headers: adminHeaders }).then(r => r.json()).then(data => { if (!data.error) setDeliverySettings(data) }).catch(() => {})
+    fetch(`${CORE_API}/admin/expenses`, { headers: adminHeaders }).then(r => r.json()).then(setExpenses).catch(() => setExpenses([]))
     fetch(`${BOOKING_API}/admin/appointments`, { headers: bookingAdminHeaders }).then(r => r.json()).then(setAppointments).catch(() => setAppointments([]))
     fetch(`${BOOKING_API}/admin/service-bookings`, { headers: bookingAdminHeaders }).then(r => r.json()).then(setServiceBookings).catch(() => setServiceBookings([]))
   }
@@ -49,6 +62,17 @@ export default function App() {
   useEffect(() => {
     if (adminToken) load()
   }, [adminToken])
+
+  useEffect(() => {
+    if (!adminToken) return
+    if (!reportRange.from || !reportRange.to) return
+    const qs = `from=${reportRange.from}&to=${reportRange.to}&group=${reportRange.group}`
+    fetch(`${CORE_API}/admin/reports/sales?${qs}`, { headers: adminHeaders }).then(r => r.json()).then(setSalesReport).catch(() => setSalesReport([]))
+    fetch(`${CORE_API}/admin/reports/finance?from=${reportRange.from}&to=${reportRange.to}`, { headers: adminHeaders })
+      .then(r => r.json())
+      .then(setFinanceSummary)
+      .catch(() => setFinanceSummary(null))
+  }, [adminToken, reportRange])
 
   const submitProduct = async (e) => {
     e.preventDefault()
@@ -196,6 +220,28 @@ export default function App() {
     fetch(`${CORE_API}/admin/delivery/zones/${id}`, { method: 'DELETE', headers: { ...adminHeaders } }).then(() => load())
   }
 
+  const submitExpense = (e) => {
+    e.preventDefault()
+    fetch(expenseEditId ? `${CORE_API}/admin/expenses/${expenseEditId}` : `${CORE_API}/admin/expenses`, {
+      method: expenseEditId ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json', ...adminHeaders },
+      body: JSON.stringify(expenseForm)
+    }).then(() => {
+      setExpenseForm({ date: '', category: '', description: '', amount: 0 })
+      setExpenseEditId('')
+      load()
+    })
+  }
+
+  const editExpense = (ex) => {
+    setExpenseForm({ date: ex.date || '', category: ex.category || '', description: ex.description || '', amount: ex.amount || 0 })
+    setExpenseEditId(ex.id)
+  }
+
+  const deleteExpense = (id) => {
+    fetch(`${CORE_API}/admin/expenses/${id}`, { method: 'DELETE', headers: { ...adminHeaders } }).then(() => load())
+  }
+
   const updateAppointmentStatus = (id, status) => {
     if (!status) return
     fetch(`${BOOKING_API}/admin/appointments/${id}/status`, {
@@ -277,6 +323,7 @@ export default function App() {
           <button className={`nav-btn ${tab === 'delivery' ? 'active' : ''}`} onClick={() => setTab('delivery')}>Delivery</button>
           <button className={`nav-btn ${tab === 'voucher' ? 'active' : ''}`} onClick={() => setTab('voucher')}>Voucher</button>
           <button className={`nav-btn ${tab === 'order' ? 'active' : ''}`} onClick={() => setTab('order')}>Order</button>
+          <button className={`nav-btn ${tab === 'keuangan' ? 'active' : ''}`} onClick={() => setTab('keuangan')}>Keuangan</button>
         </aside>
         <main className="content">
           {tab === 'produk' && (
@@ -624,6 +671,90 @@ export default function App() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+          {tab === 'keuangan' && (
+            <div>
+              <div className="card">
+                <h3>Ringkasan Keuangan</h3>
+                <div className="form-grid">
+                  <input type="date" value={reportRange.from} onChange={(e) => setReportRange({ ...reportRange, from: e.target.value })} />
+                  <input type="date" value={reportRange.to} onChange={(e) => setReportRange({ ...reportRange, to: e.target.value })} />
+                  <select value={reportRange.group} onChange={(e) => setReportRange({ ...reportRange, group: e.target.value })}>
+                    <option value="day">Harian</option>
+                    <option value="month">Bulanan</option>
+                  </select>
+                </div>
+                {financeSummary && (
+                  <div style={{ marginTop: 12 }}>
+                    <div>Sales: {financeSummary.sales_total}</div>
+                    <div>Discount: {financeSummary.discount_total}</div>
+                    <div>Cashback: {financeSummary.cashback_total}</div>
+                    <div>Shipping: {financeSummary.shipping_total}</div>
+                    <div>Expenses: {financeSummary.expense_total}</div>
+                    <div>Profit: {financeSummary.profit}</div>
+                  </div>
+                )}
+              </div>
+              <div className="card">
+                <h3>Report Penjualan</h3>
+                <table className="table">
+                  <thead>
+                    <tr><th>Periode</th><th>Orders</th><th>Gross</th><th>Diskon</th><th>Cashback</th><th>Wallet</th><th>Shipping</th><th>Total</th></tr>
+                  </thead>
+                  <tbody>
+                    {salesReport.map(r => (
+                      <tr key={r.period}>
+                        <td>{r.period}</td>
+                        <td>{r.orders_count}</td>
+                        <td>{r.gross_sales}</td>
+                        <td>{r.discount}</td>
+                        <td>{r.cashback}</td>
+                        <td>{r.wallet_used}</td>
+                        <td>{r.shipping_fee}</td>
+                        <td>{r.total_sales}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="card">
+                <h3>{expenseEditId ? 'Edit Pengeluaran' : 'Tambah Pengeluaran'}</h3>
+                <form className="form-grid" onSubmit={submitExpense}>
+                  <input type="date" value={expenseForm.date} onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })} />
+                  <input placeholder="Kategori" value={expenseForm.category} onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })} />
+                  <input placeholder="Deskripsi" value={expenseForm.description} onChange={(e) => setExpenseForm({ ...expenseForm, description: e.target.value })} />
+                  <input placeholder="Nominal" type="number" value={expenseForm.amount} onChange={(e) => setExpenseForm({ ...expenseForm, amount: Number(e.target.value) })} />
+                  <button className="btn" type="submit">{expenseEditId ? 'Update' : 'Simpan'}</button>
+                  {expenseEditId && (
+                    <button className="btn" type="button" onClick={() => { setExpenseForm({ date: '', category: '', description: '', amount: 0 }); setExpenseEditId('') }}>
+                      Batal
+                    </button>
+                  )}
+                </form>
+              </div>
+              <div className="card">
+                <h3>Daftar Pengeluaran</h3>
+                <table className="table">
+                  <thead>
+                    <tr><th>Tanggal</th><th>Kategori</th><th>Deskripsi</th><th>Nominal</th><th>Aksi</th></tr>
+                  </thead>
+                  <tbody>
+                    {expenses.map(ex => (
+                      <tr key={ex.id}>
+                        <td>{ex.date}</td>
+                        <td>{ex.category}</td>
+                        <td>{ex.description}</td>
+                        <td>{ex.amount}</td>
+                        <td>
+                          <button className="btn" type="button" onClick={() => editExpense(ex)}>Edit</button>
+                          <button className="btn" type="button" onClick={() => deleteExpense(ex.id)}>Hapus</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </main>

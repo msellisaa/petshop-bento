@@ -145,6 +145,13 @@ type VoucherCreateRequest struct {
   Active        bool   `json:"active"`
 }
 
+type ExpenseRequest struct {
+  Date        string `json:"date"`
+  Category    string `json:"category"`
+  Description string `json:"description"`
+  Amount      int    `json:"amount"`
+}
+
 type MidtransItem struct {
   ID       string `json:"id"`
   Name     string `json:"name"`

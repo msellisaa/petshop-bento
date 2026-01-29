@@ -49,6 +49,12 @@ Auth:
 - DELETE /admin/vouchers/{code}
 - GET /admin/orders
 - PUT /admin/orders/{id}/status
+- GET /admin/expenses
+- POST /admin/expenses
+- PUT /admin/expenses/{id}
+- DELETE /admin/expenses/{id}
+- GET /admin/reports/sales?from=YYYY-MM-DD&to=YYYY-MM-DD&group=day|month
+- GET /admin/reports/finance?from=YYYY-MM-DD&to=YYYY-MM-DD
 - PUT /admin/staff/{id}
 - DELETE /admin/staff/{id}
 - POST /webhooks/midtrans
